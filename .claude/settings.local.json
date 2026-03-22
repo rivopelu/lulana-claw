@@ -7,7 +7,9 @@
       "Bash(bun run:*)",
       "Bash(bun install:*)",
       "Bash(bun add:*)",
-      "Bash(bunx shadcn@latest:*)"
+      "Bash(bunx shadcn@latest:*)",
+      "Bash(bunx vite:*)",
+      "Bash(grep \"\"version\"\":*)"
     ]
   }
 }

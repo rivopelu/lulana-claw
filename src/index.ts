@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { Hono } from "hono";
+import { serveStatic } from "hono/bun";
 import { env } from "./configs/env";
 import logger from "./configs/logger";
 import { ErrorHandler } from "./libs/error-handler";
@@ -17,6 +18,9 @@ new InitMiddlewares(app);
 app.get("/", (c) => {
   return c.json({ message: "welcome" });
 });
+
+app.use("/assets/*", serveStatic({ root: "./client/dist" }))
+app.get("*", serveStatic({ path: "./client/dist/index.html" }))
 
 async function bootstrap() {
   try {

@@ -9,18 +9,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-# Development
-bun run dev          # Start dev server with hot reload
-bun run build        # Build to /dist (Bun target)
-bun run start        # Build + run
+# Development (runs Hono :8090 + Vite :5173 concurrently)
+bun run dev
+
+# Individual dev servers
+bun run dev:server   # Hono backend only (--watch)
+bun run dev:client   # Vite frontend only
+
+# Build
+bun run build        # build:client then build:server
+bun run build:client # Vite → client/dist/
+bun run build:server # Bun build → dist/
+bun run start        # Production: serve API + SPA from :8090
 
 # Database (PostgreSQL via Drizzle)
 bun run db:generate  # Generate migrations from schema changes
 bun run db:migrate   # Run pending migrations
 
-# Linting / Formatting
-bunx eslint src
-bunx prettier --write src
+# Quality
+bun run typecheck    # tsc --noEmit
+bun run lint         # ESLint src + __test__
+bun run lint:fix     # ESLint --fix
+bun run format       # Prettier --write src + __test__
+bun test             # Run unit tests
+bun run test:coverage
+
+# Add shadcn component (run from client/)
+cd client && bunx shadcn@latest add [component-name]
 ```
 
 ## Architecture
@@ -147,6 +162,39 @@ OPENAI_DEFAULT_MODEL=gpt-4o-mini
 ```
 
 All validated at startup via Zod in `src/configs/`.
+
+## Frontend (client/)
+
+- **Stack**: React 19 + Vite 8 + Tailwind v4 + shadcn/ui (latest)
+- **Tailwind config**: via `@theme` block in `client/src/index.css` — no `tailwind.config.ts`, no `postcss.config.js`
+- **Path alias**: `@/*` → `client/src/*`
+- **shadcn config**: `client/components.json`
+- **HTTP client**: `ky` instance in `client/src/lib/api.ts` — prefix `/api`, auto-attaches JWT from `localStorage`
+- **Server state**: TanStack Query v5 — all data fetching via custom hooks in `client/src/hooks/`
+- **Routing**: React Router v7
+
+### Frontend structure
+
+```
+client/src/
+├── components/layout/   # AppShell, Sidebar, Topbar, PageHeader
+├── components/shared/   # DataTable, StatCard, EmptyState, LoadingSpinner
+├── components/ui/       # shadcn generated — do not edit manually
+├── hooks/               # useAuth.ts, useClients.ts — react-query hooks
+├── lib/                 # api.ts, queryClient.ts, utils.ts, constants.ts
+├── pages/               # [feature]/[Name]Page.tsx
+├── stores/              # authStore.ts — token helpers
+└── types/               # api.ts, user.ts, client.ts
+```
+
+### Frontend conventions
+
+- All API calls go through `client/src/lib/api.ts` — never use `fetch`/`axios` directly
+- All react-query hooks in `client/src/hooks/use[Resource].ts`
+- Page components: `client/src/pages/[feature]/[Name]Page.tsx`
+- Shared UI: `client/src/components/shared/`
+- Types mirroring backend responses: `client/src/types/`
+- In production, Hono serves the Vite SPA from `client/dist/` — all non-API routes fall back to `index.html`
 
 ## Important Conventions
 
