@@ -80,6 +80,7 @@ export default class SessionService {
     content: string,
     fromId?: string,
     fromName?: string,
+    embedding?: number[],
   ): Promise<void> {
     await this.messageRepository.create({
       session_id: sessionId,
@@ -87,6 +88,7 @@ export default class SessionService {
       content,
       from_id: fromId,
       from_name: fromName,
+      embedding,
     });
   }
 

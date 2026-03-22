@@ -14,6 +14,7 @@ export interface IContext {
   session_id?: string;
   order: number;
   active: boolean;
+  embedding?: number[];
   created_at: Date;
   updated_at?: Date;
 }
@@ -34,6 +35,7 @@ const ContextSchema = new Schema<IContext>(
     session_id: { type: String, index: true },
     order: { type: Number, default: 0 },
     active: { type: Boolean, default: true },
+    embedding: { type: [Number], default: undefined },
     created_at: { type: Date, default: () => new Date() },
     updated_at: { type: Date },
   },

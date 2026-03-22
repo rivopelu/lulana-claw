@@ -26,6 +26,7 @@ export interface RequestCreateContext {
   client_id?: string;
   session_id?: string;
   order?: number;
+  embedding?: number[];
 }
 
 export interface RequestUpdateContext {
@@ -77,6 +78,7 @@ export default class ContextService {
       client_id: body.client_id,
       session_id: body.session_id,
       order: body.order ?? 0,
+      embedding: body.embedding,
     };
     const ctx = await this.repository.create(input);
     this.writeToDisk(ctx);
@@ -186,6 +188,7 @@ export default class ContextService {
     sessionName: string,
     content: string,
     createdBy: string,
+    embedding?: number[],
   ): Promise<void> {
     const input: CreateContextInput = {
       context_id: generateId(),
@@ -197,6 +200,7 @@ export default class ContextService {
       client_id: clientId,
       session_id: sessionId,
       order: 99,
+      embedding,
     };
     const ctx = await this.repository.create(input);
     this.writeToDisk(ctx);

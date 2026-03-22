@@ -15,6 +15,7 @@ export interface CreateContextInput {
   client_id?: string;
   session_id?: string;
   order?: number;
+  embedding?: number[];
 }
 
 export default class ContextRepository {

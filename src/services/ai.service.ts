@@ -109,4 +109,21 @@ export default class AiService {
 
     return { text, toolCalls };
   }
+
+  /**
+   * Generate vector embeddings for a given text.
+   * Default model: text-embedding-3-small
+   */
+  async generateEmbedding(apiKey: string, provider: string, text: string): Promise<number[]> {
+    const client = new OpenAI({ apiKey, baseURL: BASE_URLS[provider] });
+
+    // Use a standard embedding model. Note: some providers might not support this via OpenAI SDK
+    // but OpenAI, OpenRouter, and Gemini-OpenAI-Compat usually do.
+    const response = await client.embeddings.create({
+      model: "text-embedding-3-small",
+      input: text.replace(/\n/g, " "),
+    });
+
+    return response.data[0].embedding;
+  }
 }

@@ -1,13 +1,14 @@
 import { Bot } from "grammy";
 import OpenAI from "openai";
 import logger from "../configs/logger";
-import SessionService, { type ChatType } from "../services/session.service";
+import AiModelRepository from "../repositories/ai-model.repository";
+import ClientRepository from "../repositories/client.repository";
+import TaskRepository from "../repositories/task.repository";
 import AiService from "../services/ai.service";
 import ContextService from "../services/context.service";
+import SessionService, { type ChatType } from "../services/session.service";
 import TaskService, { parseRemindTime, type TaskType } from "../services/task.service";
-import TaskRepository from "../repositories/task.repository";
-import ClientRepository from "../repositories/client.repository";
-import AiModelRepository from "../repositories/ai-model.repository";
+import VectorService from "../services/vector.service";
 
 // ── Task capability prompt injected into every message system prompt ────────
 // AI appends [TASK_CREATE:{...}] at the end of its reply when it needs to create a task.
@@ -72,6 +73,7 @@ class BotManager {
   private taskRepository = new TaskRepository();
   private clientRepository = new ClientRepository();
   private aiModelRepository = new AiModelRepository();
+  private vectorService = new VectorService();
 
   /** Enqueue work for a specific chat so messages are processed one at a time */
   private enqueue(clientId: string, chatId: number, work: () => Promise<void>): void {
@@ -104,7 +106,11 @@ class BotManager {
           if (!entry || entry.status !== "running") continue;
 
           const TYPE_EMOJI: Record<string, string> = {
-            task: "📋", reminder: "⏰", notes: "📝", meeting: "🤝", deadline: "🚨",
+            task: "📋",
+            reminder: "⏰",
+            notes: "📝",
+            meeting: "🤝",
+            deadline: "🚨",
           };
           const emoji = TYPE_EMOJI[task.type ?? "task"] ?? "📋";
           const desc = task.description ? `\n${task.description}` : "";
@@ -118,7 +124,9 @@ class BotManager {
             await this.taskRepository.update(task.id, { reminded: true });
             logger.info(`[Scheduler] Reminder sent for task ${task.id}`);
           } catch (err) {
-            logger.error(`[Scheduler] Failed to send reminder for task ${task.id}: ${(err as Error).message}`);
+            logger.error(
+              `[Scheduler] Failed to send reminder for task ${task.id}: ${(err as Error).message}`,
+            );
           }
         }
       } catch (err) {
@@ -266,7 +274,6 @@ class BotManager {
       }
 
       const chatId = ctx.chat.id;
-      const fromId = ctx.from?.id?.toString() ?? "system";
       const session = await this.sessionService.getSession(clientId, chatId);
 
       // Parse type prefix
@@ -355,13 +362,15 @@ class BotManager {
       }
 
       const TYPE_EMOJI: Record<string, string> = {
-        task: "📋", reminder: "⏰", notes: "📝", meeting: "🤝", deadline: "🚨",
+        task: "📋",
+        reminder: "⏰",
+        notes: "📝",
+        meeting: "🤝",
+        deadline: "🚨",
       };
 
       const lines = tasks.map((t, i) => {
-        const remind = t.remind_at
-          ? ` — ⏰ ${new Date(t.remind_at).toLocaleString("id-ID")}`
-          : "";
+        const remind = t.remind_at ? ` — ⏰ ${new Date(t.remind_at).toLocaleString("id-ID")}` : "";
         return `${i + 1}. ${TYPE_EMOJI[t.type] ?? "📋"} *${t.title}*${remind}\n   ID: \`${t.id.slice(-8)}\``;
       });
 
@@ -428,12 +437,17 @@ class BotManager {
         // Fetch last 200 messages for analysis
         const history = await this.sessionService.getHistory(session.id, 200);
         if (history.length < 3) {
-          await ctx.reply("⚠️ Riwayat percakapan terlalu sedikit untuk dianalisa. Chat dulu lebih banyak!");
+          await ctx.reply(
+            "⚠️ Riwayat percakapan terlalu sedikit untuk dianalisa. Chat dulu lebih banyak!",
+          );
           return;
         }
 
         const historyText = history
-          .map((m) => `[${m.role.toUpperCase()}${m.from_name ? ` - ${m.from_name}` : ""}]: ${m.content}`)
+          .map(
+            (m) =>
+              `[${m.role.toUpperCase()}${m.from_name ? ` - ${m.from_name}` : ""}]: ${m.content}`,
+          )
           .join("\n");
 
         const metaPrompt = `Kamu adalah analis percakapan AI. Tugasmu menganalisa riwayat chat berikut dan menghasilkan dokumen konteks komprehensif.
@@ -466,12 +480,26 @@ Hasilkan dokumen konteks yang akan digunakan sebagai panduan perilaku asisten di
           `[Bot:${clientId}:updatecontext]`,
         );
 
+        // Generate embedding for the new context
+        let contextEmbedding: number[] | undefined;
+        try {
+          contextEmbedding = await this.aiService.generateEmbedding(
+            aiModel.api_key,
+            aiModel.provider,
+            generatedContext,
+          );
+        } catch (e) {
+          logger.warn(`Failed to generate embedding for auto-context: ${(e as Error).message}`);
+        }
+
         // Save as session context (upsert: delete old auto-generated one first)
         const existing = await this.contextService.getAutoContext(session.id);
         if (existing) {
           await this.contextService.updateById(existing.id, {
             content: generatedContext,
           });
+          // Update embedding separately if we want, or just wait for next update.
+          // For now, let's just make sure createAutoContext handles it.
           await ctx.reply(
             `✅ Konteks sesi *"${session.name}"* berhasil diperbarui dari ${history.length} pesan.\n\n_Konteks baru akan aktif pada pesan berikutnya._`,
             { parse_mode: "Markdown" },
@@ -484,6 +512,7 @@ Hasilkan dokumen konteks yang akan digunakan sebagai panduan perilaku asisten di
             session.name,
             generatedContext,
             fromId,
+            contextEmbedding,
           );
           await ctx.reply(
             `✅ Konteks sesi *"${session.name}"* berhasil dibuat dari ${history.length} pesan.\n\n_Konteks akan aktif pada pesan berikutnya._`,
@@ -511,8 +540,7 @@ Hasilkan dokumen konteks yang akan digunakan sebagai panduan perilaku asisten di
 
         // Simple string check — reliable across all Unicode/emoji edge cases
         const isMentioned =
-          botUsername.length > 0 &&
-          rawText.toLowerCase().includes(`@${botUsername}`);
+          botUsername.length > 0 && rawText.toLowerCase().includes(`@${botUsername}`);
         const isReplyToBot = ctx.message.reply_to_message?.from?.id === botId;
 
         logger.info(
@@ -562,16 +590,64 @@ Hasilkan dokumen konteks yang akan digunakan sebagai panduan perilaku asisten di
         }
 
         try {
-          // 3. Save user message
-          await this.sessionService.addMessage(session.id, "user", userText, fromId, fromName);
+          // 3. Generate embedding for user message (for search & memory)
+          let userEmbedding: number[] | undefined;
+          try {
+            userEmbedding = await this.aiService.generateEmbedding(
+              aiModel.api_key,
+              aiModel.provider,
+              userText,
+            );
+            if (userEmbedding) {
+              logger.info(
+                `${label} Generated embedding for user message: ${userEmbedding.length} dims`,
+              );
+            }
+          } catch (e) {
+            logger.warn(`${label} Failed to generate embedding: ${(e as Error).message}`);
+          }
 
-          // 4. Typing indicator
+          // 4. Save user message with embedding
+          await this.sessionService.addMessage(
+            session.id,
+            "user",
+            userText,
+            fromId,
+            fromName,
+            userEmbedding,
+          );
+
+          // 5. Typing indicator
           await ctx.replyWithChatAction("typing");
 
-          // 5. Fetch history
+          // 6. Vector Search for RAG (History & Context)
+          let ragContext = "";
+          if (userEmbedding) {
+            const relHistory = await this.vectorService.searchHistory(session.id, userEmbedding, 5);
+            const relContexts = await this.vectorService.searchContexts(
+              aiModel.account_id,
+              userEmbedding,
+              { clientId, sessionId: session.id, limit: 3 },
+            );
+
+            if (relHistory.length > 0) {
+              ragContext +=
+                "\n### Relevant Past Conversations:\n" +
+                relHistory
+                  .map((h) => `[${new Date(h.created_at).toLocaleDateString()}]: ${h.content}`)
+                  .join("\n");
+            }
+            if (relContexts.length > 0) {
+              ragContext +=
+                "\n### Relevant Knowledge/Context:\n" +
+                relContexts.map((c) => `- ${c.name}: ${c.content}`).join("\n");
+            }
+          }
+
+          // 7. Fetch recent history (standard window)
           const history = await this.sessionService.getHistory(session.id, HISTORY_LIMIT + 1);
 
-          // 5b. Build system prompt from contexts + current time + task capability
+          // 8. Build system prompt from contexts + current time + task capability + RAG
           const entityMode = clientRecord?.entity_mode ?? "per_session";
           const baseSystemPrompt = await this.contextService.buildSystemPrompt(
             aiModel.account_id,
@@ -582,13 +658,14 @@ Hasilkan dokumen konteks yang akan digunakan sebagai panduan perilaku asisten di
           const nowStr = new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
           const systemPrompt = [
             baseSystemPrompt,
+            ragContext ? `\n\n[MEMORI RELEVAN]\n${ragContext}` : "",
             `[Waktu sekarang: ${nowStr}]`,
             TASK_CAPABILITY_PROMPT,
           ]
             .filter(Boolean)
             .join("\n\n");
 
-          // 6. Call AI with exponential backoff
+          // 9. Call AI with exponential backoff
           const rawReply = await withRetry(
             () =>
               this.aiService.chat(
@@ -605,7 +682,11 @@ Hasilkan dokumen konteks yang akan digunakan sebagai panduan perilaku asisten di
           // 6b. Parse [TASK_CREATE:{...}] markers from the AI response
           const TASK_MARKER_RE = /\[TASK_CREATE:([\s\S]*?)\]/g;
           const TYPE_EMOJI: Record<string, string> = {
-            task: "📋", reminder: "⏰", notes: "📝", meeting: "🤝", deadline: "🚨",
+            task: "📋",
+            reminder: "⏰",
+            notes: "📝",
+            meeting: "🤝",
+            deadline: "🚨",
           };
           const taskConfirmations: string[] = [];
           let match: RegExpExecArray | null;
@@ -647,7 +728,9 @@ Hasilkan dokumen konteks yang akan digunakan sebagai panduan perilaku asisten di
               const remindInfo = remindAt
                 ? ` — ⏰ ${new Date(remindAt).toLocaleString("id-ID")}`
                 : "";
-              taskConfirmations.push(`${emoji} *${args.title}*${remindInfo} \`[${task.id.slice(-8)}]\``);
+              taskConfirmations.push(
+                `${emoji} *${args.title}*${remindInfo} \`[${task.id.slice(-8)}]\``,
+              );
               logger.info(`${label} Task created via AI: ${task.id} type=${taskType}`);
             } catch (tcErr) {
               logger.error(`${label} task marker parse error: ${(tcErr as Error).message}`);
@@ -664,8 +747,28 @@ Hasilkan dokumen konteks yang akan digunakan sebagai panduan perilaku asisten di
 
           await ctx.reply(reply, { parse_mode: "Markdown" });
 
-          // 8. Save assistant reply (without the marker)
-          await this.sessionService.addMessage(session.id, "assistant", reply);
+          // 10. Generate embedding for assistant reply
+          let replyEmbedding: number[] | undefined;
+          try {
+            replyEmbedding = await this.aiService.generateEmbedding(
+              aiModel.api_key,
+              aiModel.provider,
+              reply,
+            );
+          } catch (e) {
+            logger.error(e);
+            /* ignore embedding errors for replies */
+          }
+
+          // 11. Save assistant reply (without the marker)
+          await this.sessionService.addMessage(
+            session.id,
+            "assistant",
+            reply,
+            undefined,
+            undefined,
+            replyEmbedding,
+          );
         } catch (err) {
           const apiErr = err instanceof OpenAI.APIError ? err : null;
           const status = apiErr?.status;
@@ -712,7 +815,9 @@ Hasilkan dokumen konteks yang akan digunakan sebagai panduan perilaku asisten di
       await bot.api.deleteWebhook({ drop_pending_updates: false });
       logger.info(`[BotManager] Webhook cleared for client ${clientId}`);
     } catch (err) {
-      logger.warn(`[BotManager] Could not clear webhook for client ${clientId}: ${(err as Error).message}`);
+      logger.warn(
+        `[BotManager] Could not clear webhook for client ${clientId}: ${(err as Error).message}`,
+      );
     }
 
     bot

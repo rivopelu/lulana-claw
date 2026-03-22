@@ -6,6 +6,7 @@ export interface ISessionMessage {
   content: string;
   from_id?: string;
   from_name?: string;
+  embedding?: number[];
   created_at: Date;
 }
 
@@ -16,6 +17,7 @@ const SessionMessageSchema = new Schema<ISessionMessage>(
     content: { type: String, required: true },
     from_id: { type: String },
     from_name: { type: String },
+    embedding: { type: [Number], default: undefined },
     created_at: { type: Date, default: () => new Date() },
   },
   {
