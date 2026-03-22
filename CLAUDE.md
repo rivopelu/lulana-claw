@@ -4,37 +4,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Luluna Claw** ("Lula") — an AI assistant powered by OpenAI GPT, supporting multiple client channels (Telegram first, then Discord, WhatsApp, HTTP). All configuration (bot tokens, contexts, sessions) is DB-driven — nothing is hardcoded in source.
+**Luluna Claw** ("Lula") — a multi-channel AI assistant platform. Supports Telegram (primary), Discord, WhatsApp, HTTP. All configuration is DB-driven: bot tokens, AI models, contexts, sessions, credentials — nothing hardcoded in source.
 
 ## Commands
 
 ```bash
-# Development (runs Hono :8090 + Vite :5173 concurrently)
+# Development (Hono :8090 + Vite :5173 concurrently)
 bun run dev
+bun run dev:server   # backend only (--watch)
+bun run dev:client   # frontend only
 
-# Individual dev servers
-bun run dev:server   # Hono backend only (--watch)
-bun run dev:client   # Vite frontend only
-
-# Build
+# Build & Run
 bun run build        # build:client then build:server
-bun run build:client # Vite → client/dist/
-bun run build:server # Bun build → dist/
-bun run start        # Production: serve API + SPA from :8090
+bun run start        # Production: API + SPA from :8090
 
 # Database (PostgreSQL via Drizzle)
 bun run db:generate  # Generate migrations from schema changes
 bun run db:migrate   # Run pending migrations
 
 # Quality
-bun run typecheck    # tsc --noEmit
-bun run lint         # ESLint src + __test__
-bun run lint:fix     # ESLint --fix
-bun run format       # Prettier --write src + __test__
-bun test             # Run unit tests
-bun run test:coverage
+bun run typecheck    # tsc --noEmit (run from root)
+cd client && bunx tsc --noEmit  # frontend typecheck
+bun run lint         # ESLint
+bun run lint:fix
+bun run format       # Prettier
+bun test
 
-# Add shadcn component (run from client/)
+# Add shadcn component (must run from client/)
 cd client && bunx shadcn@latest add [component-name]
 ```
 
@@ -42,95 +38,100 @@ cd client && bunx shadcn@latest add [component-name]
 
 ### Dual Database Strategy
 
-- **PostgreSQL** (Drizzle ORM) — structured/relational data: accounts, clients, contexts, sessions metadata
-- **MongoDB** (Mongoose) — session chat history only, keeps Postgres lightweight
+- **PostgreSQL** (Drizzle ORM) — structured data: accounts, clients, sessions, AI models, tasks, credentials
+- **MongoDB** (Mongoose) — chat history (`session_messages`) + behavior contexts (`contexts`)
 
-### Key PostgreSQL Entities (`src/entities/pg/`)
+### PostgreSQL Entities (`src/entities/pg/`)
 
-| Table | Purpose |
+| Table | Key Fields |
 |---|---|
-| `account` | Users — extended with Telegram identity fields (`telegram_id`, `telegram_username`, `telegram_chat_id`) |
-| `client` | One row per bot instance. Fields: `type` (telegram/discord/wa/http), `token`, `name`, `active`, `settings` (JSONB) |
-| `context` | Context content. `type`: `global` \| `client` \| `user` \| `group` \| `session`. Optional FKs: `client_id`, `account_id` |
-| `session` | One session per unique conversation (user↔bot or group↔bot). Stores `model_override`, `active`, refs to `client` and `account`/group |
+| `account` | `email`, `password`, `name` |
+| `client` | `type` (telegram/discord/whatsapp/http), `ai_model_id`, `entity_mode` (single/per_session) |
+| `client_credential` | `client_id`, `key`, `value` — key-value credentials per bot (e.g. bot_token) |
+| `ai_model` | `account_id`, `name`, `provider` (openai/openrouter/gemini/anthropic), `model_id`, `api_key` |
+| `session` | `client_id`, `chat_id` (bigint, negative for groups), `chat_type`, `name`, `ai_model_id` (override) |
+| `task` | `account_id`, `client_id`, `chat_id`, `session_id?`, `type` (task/reminder/notes/meeting/deadline), `title`, `description`, `remind_at` (Unix ms), `reminded` (bool), `status` (pending/done/cancelled) |
 
-### MongoDB Collection (`session_messages`)
+All tables use soft-delete audit fields from `_base.entity.ts`: `id`, `active`, `created_date/by`, `updated_date/by`, `deleted_date/by`.
 
-Stores full chat history per session: `{ session_id, role: user|assistant|system, content, created_at }`. Referenced by `session.id` from Postgres.
+### MongoDB Schemas (`src/entities/mongo/`)
 
-### Startup Flow
+- **`session_messages`** — `{ session_id, role: user|assistant|system, content, from_id, from_name, created_at }`
+- **`contexts`** — `{ context_id, account_id, name, type: global|client|session, category: identity|personality|rules|knowledge|custom, content, client_id?, session_id?, order, active }`
 
-1. Load all `client` rows from DB → initialize bot instances (e.g., Grammy for Telegram)
-2. Download all `context` rows from DB → write to `contexts/` directory as `.md` files (disk cache)
-3. Start Hono server + register bot webhook/polling handlers
-4. Watch for context changes in DB → re-download affected `.md` files on change
+### Startup Flow (`src/index.ts`)
 
-### Session & Context Resolution Flow
+1. Validate env (Zod) → connect PostgreSQL + MongoDB
+2. `ContextService.syncAllToDisk()` — write all active MongoDB contexts to `contexts/{type}_{category}_{id}.md`
+3. Register Hono routes (all controllers via `src/routes/_app.routes.ts`)
+4. Load all active clients → `BotManager.startActiveBots()`
+5. `BotManager.startReminderScheduler()` — polls DB every 30s for due tasks (global singleton, starts once)
+6. Listen on `:8090`
 
-When a message arrives (e.g., from Telegram):
-
-```
-Incoming message
-  → Identify sender (telegram_id → account row, create if new)
-  → Resolve chat scope: personal (user↔bot) or group
-  → Find or create Session (keyed by client_id + chat_id)
-  → Build system prompt by layering contexts in order:
-       1. global context(s)
-       2. client context(s) (for this client type)
-       3. user context (if any for this account)
-       4. group context (if group chat)
-       5. session context (if any)
-  → Load recent chat history from MongoDB (session_messages)
-  → Call OpenAI with [system prompt + history + new message]
-  → Persist response to MongoDB
-  → Reply to user
-```
-
-### Module Structure
+### Incoming Telegram Message Flow
 
 ```
-src/
-├── clients/          # Bot client initializers (Telegram/Grammy, future: Discord, WA)
-├── context/          # ContextService + disk cache manager (contexts/*.md)
-├── session/          # Session management (Postgres) + history repo (MongoDB)
-├── ai/               # OpenAIService — model selection, prompt assembly, API call
-├── entities/
-│   ├── pg/           # Drizzle table definitions (account, client, context, session)
-│   └── mongo/        # Mongoose schemas (session_messages)
-├── controllers/      # HTTP endpoints (existing auth + future management APIs)
-├── services/         # Business logic
-├── repositories/     # Data access (Postgres via Drizzle, Mongo via Mongoose)
-├── middleware/       # Logger, CORS, JWT
-├── configs/          # Env validation (Zod), logger, DB connections
-└── libs/             # Exceptions, response helpers, i18n
+Grammy update → identify account (by telegram user ID, create if new)
+  → find/create Session (keyed: client_id + chat_id)
+  → if group: skip unless @mentioned or reply-to-bot
+  → strip @mention from text; if empty → return
+  → build system prompt: global contexts → client contexts → session contexts (if entity_mode=per_session) + current datetime + TASK_CAPABILITY_PROMPT
+  → load last 20 messages from MongoDB
+  → per-chat queue (key: clientId:chatId) → sequential, no concurrency
+  → call AI with exponential backoff retry (3 attempts: 2s, 6s, 18s)
+  → parse [TASK_CREATE:{...}] markers in AI response → create tasks in DB, strip markers from reply
+  → save user + assistant messages to MongoDB
+  → reply
 ```
 
-### Request Flow (existing pattern)
+### Model Resolution Hierarchy
 
-```
-Routes → Controllers → Services → Repositories → DB (Postgres or MongoDB)
-```
+`session.ai_model_id` → `client.ai_model_id` → error ("No AI model assigned")
 
-Controllers use `hono-decorators` (`@Controller`, `@Get`, `@Post`, `@Middleware`). All routes registered in `src/routes/`.
+AI calls use the model's `provider` to route to the correct base URL (OpenAI, OpenRouter, Gemini, Anthropic all use OpenAI-compatible SDK with `baseURL`).
 
-### Error Handling
+### Entity Mode
 
-Custom exception classes in `src/libs/exceptions/`: `BadRequest`, `Unauthorized`, `NotFound`, `Forbidden`. Error messages localized via `i18next`.
+- **`per_session`** (default) — each chat has its own session context layer (global + client + session contexts)
+- **`single`** — all chats share only global + client contexts; session-level contexts are skipped
+
+### Reminder Scheduler
+
+Runs every 30s: queries `task` rows where `status=pending`, `reminded=false`, `remind_at <= now`. For each due task, if the bot is running: sends Telegram message to `chat_id`, sets `reminded=true`.
+
+### Context Auto-Generation (`/updatecontext` command)
+
+Fetches last 200 MongoDB messages → sends to AI with analysis prompt → AI returns a context document → saved/updated as session context with name `auto:{sessionName}`. Written to disk immediately.
+
+### Bot Commands
+
+| Command | Behavior |
+|---|---|
+| `/setup <name>` | Create or rename the session for this chat |
+| `/model` | Show/set/reset the AI model for this session |
+| `/task <title> [| time]` | Create task via command; optional type prefix `reminder:`, `notes:`, etc.; time: `30m`, `2h`, `1d`, `HH:MM`, `DD/MM HH:MM` |
+| Natural language | "ingatkan jam 10 untuk makan" → AI appends `[TASK_CREATE:{...}]` → bot creates task automatically |
+| `/tasks` | List pending tasks for this chat |
+| `/donetask <id>` | Mark task as done |
+| `/updatecontext` | Analyze chat history and auto-generate/update session context |
+
+### Core Bot File
+
+`src/bots/bot-manager.ts` — singleton, ~700 lines. Owns: Grammy bot instances, per-chat message queues, command handlers, reminder scheduler, bot lifecycle (start/stop/restart/getStatus).
 
 ## Tech Stack
 
 | Layer | Tech |
 |---|---|
 | Runtime | Bun |
-| Web Framework | Hono 4.x + `hono-decorators` |
+| Backend | Hono 4.x + `hono-decorators` |
 | Telegram | Grammy |
-| AI | OpenAI SDK (GPT-4o-mini default, configurable per session) |
+| AI | OpenAI SDK (multi-provider via `baseURL`) |
 | Postgres ORM | Drizzle ORM |
 | MongoDB | Mongoose |
 | Validation | Zod + `@hono/zod-validator` |
 | Auth | Hono JWT + Bun password hashing |
 | Logging | Winston + picocolors |
-| i18n | i18next |
 
 ## Environment Variables
 
@@ -139,67 +140,62 @@ PORT=8090
 NODE_ENV=development
 
 # PostgreSQL
-DB_HOST=
-DB_PORT=5432
-DB_USER=
-DB_PASSWORD=
-DB_NAME=
+DB_HOST=  DB_PORT=5432  DB_USER=  DB_PASSWORD=  DB_NAME=
 
 # MongoDB
-MONGO_HOST=
-MONGO_PORT=27017
-MONGO_USER=
-MONGO_PASSWORD=
-MONGO_NAME=
+MONGO_HOST=  MONGO_PORT=27017  MONGO_USER=  MONGO_PASSWORD=  MONGO_NAME=
 
 # JWT
-JWT_SECRET=
-JWT_EXPIRES_IN_DAY=
+JWT_SECRET=  JWT_EXPIRES_IN_DAY=
 
-# OpenAI
-OPENAI_API_KEY=
-OPENAI_DEFAULT_MODEL=gpt-4o-mini
+# OpenAI (default fallback)
+OPENAI_API_KEY=  OPENAI_DEFAULT_MODEL=gpt-4o-mini
 ```
 
-All validated at startup via Zod in `src/configs/`.
+All validated at startup via Zod in `src/configs/env.ts`.
+
+## Backend Conventions
+
+- **Request flow**: Routes → Controllers (`hono-decorators`) → Services → Repositories → DB
+- **Error handling**: Custom exceptions in `src/libs/exceptions/` (`BadRequest`, `Unauthorized`, `NotFound`, `Forbidden`); messages via `i18next`
+- **Response helpers**: `src/libs/response-helper.ts` — all controllers use these for consistent shape
+- **Auth context**: `src/libs/utils.ts:extractAccountId()` pulls `account_id` from JWT in all protected routes
 
 ## Frontend (client/)
 
-- **Stack**: React 19 + Vite 8 + Tailwind v4 + shadcn/ui (latest)
-- **Tailwind config**: via `@theme` block in `client/src/index.css` — no `tailwind.config.ts`, no `postcss.config.js`
+- **Stack**: React 19 + Vite 8 + Tailwind v4 + shadcn/ui
+- **Tailwind config**: `@theme` block in `client/src/index.css` — no `tailwind.config.ts`, no `postcss.config.js`
 - **Path alias**: `@/*` → `client/src/*`
-- **shadcn config**: `client/components.json`
-- **HTTP client**: `ky` instance in `client/src/lib/api.ts` — prefix `/api`, auto-attaches JWT from `localStorage`
-- **Server state**: TanStack Query v5 — all data fetching via custom hooks in `client/src/hooks/`
-- **Routing**: React Router v7
+- **HTTP client**: `ky` in `client/src/lib/api.ts` — prefix `/api`, auto-attaches JWT from `localStorage`
+- **Server state**: TanStack Query v5; hooks in `client/src/hooks/use[Resource].ts`
+- **Routing**: React Router v7; routes in `client/src/App.tsx`
 
-### Frontend structure
+### Key Frontend Files
 
-```
-client/src/
-├── components/layout/   # AppShell, Sidebar, Topbar, PageHeader
-├── components/shared/   # DataTable, StatCard, EmptyState, LoadingSpinner
-├── components/ui/       # shadcn generated — do not edit manually
-├── hooks/               # useAuth.ts, useClients.ts — react-query hooks
-├── lib/                 # api.ts, queryClient.ts, utils.ts, constants.ts
-├── pages/               # [feature]/[Name]Page.tsx
-├── stores/              # authStore.ts — token helpers
-└── types/               # api.ts, user.ts, client.ts
-```
+| File | Purpose |
+|---|---|
+| `hooks/useAuth.ts` | Setup check, sign in/up, current user, sign out |
+| `hooks/useClients.ts` | Client CRUD, bot start/stop/restart, status polling (3s), credentials, entity mode, AI model |
+| `hooks/useSessions.ts` | Sessions by client, detail, chat history (5s refetch), set model |
+| `hooks/useAiModels.ts` | AI model CRUD, master list by provider, OpenRouter OAuth |
+| `hooks/useContexts.ts` | Context CRUD |
+| `hooks/useTasks.ts` | Task CRUD, status filter; auto-refetch every 30s |
+| `lib/constants.ts` | All `ROUTES.*` and `API.*` endpoint strings — always update here first |
+| `types/` | Mirror backend response shapes exactly |
 
-### Frontend conventions
+### Frontend Conventions
 
-- All API calls go through `client/src/lib/api.ts` — never use `fetch`/`axios` directly
-- All react-query hooks in `client/src/hooks/use[Resource].ts`
-- Page components: `client/src/pages/[feature]/[Name]Page.tsx`
-- Shared UI: `client/src/components/shared/`
-- Types mirroring backend responses: `client/src/types/`
-- In production, Hono serves the Vite SPA from `client/dist/` — all non-API routes fall back to `index.html`
+- Never use `fetch`/`axios` — always use `client/src/lib/api.ts`
+- `useForm<T, unknown, T>` with `zodResolver` for all forms; use `useEffect(() => { if (open) reset(...) }, [open, editing, reset])` to re-populate edit dialogs
+- Radix Select cannot use empty string as value — use `"__none__"` sentinel when needed
+- `components/ui/` is shadcn-generated — never edit manually
+- In production, Hono serves the SPA from `client/dist/`; all non-`/api` routes fall back to `index.html`
 
 ## Important Conventions
 
-- **No hardcoded context or bot tokens** — everything loaded from DB at runtime
-- **Context cache** lives in `contexts/` directory as `.md` files — never edit manually, always update via DB
-- **One session = one conversation** — a user chatting privately and the same user in a group are different sessions
-- **Model is configurable per session** — default from env, can be overridden in `session.model_override`
-- Postgres schema changes: always run `db:generate` then `db:migrate`
+- **No hardcoded tokens or context content** — everything from DB at runtime
+- **Context disk cache** (`contexts/*.md`) is auto-managed by `ContextService.syncAllToDisk()` — never edit files manually
+- **One session = one conversation** — private chat and group chat are always separate sessions even for the same user
+- **Postgres schema changes**: always `db:generate` → `db:migrate`; never edit migration SQL files manually
+- **API keys** masked in responses — only last 6 chars shown (`ai-model.service.ts`)
+- **Bot privacy mode**: Telegram bots must have privacy mode **DISABLED** in BotFather to receive group messages without being admin

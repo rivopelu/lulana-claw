@@ -71,6 +71,13 @@
       "when": 1774184846084,
       "tag": "0009_misty_loki",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1774189006438,
+      "tag": "0010_dry_puff_adder",
+      "breakpoints": true
     }
   ]
 }

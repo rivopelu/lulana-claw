@@ -8,6 +8,7 @@ export const ROUTES = {
   SESSIONS: "/sessions",
   SESSION_DETAIL: (id: string) => `/sessions/${id}`,
   CONTEXTS: "/contexts",
+  TASKS: "/tasks",
 } as const
 
 export const API = {
@@ -42,6 +43,12 @@ export const API = {
   CONTEXT: {
     LIST: "context",
     DETAIL: (id: string) => `context/${id}`,
+  },
+  TASK: {
+    LIST: "task",
+    DETAIL: (id: string) => `task/${id}`,
+    DONE: (id: string) => `task/${id}/done`,
+    CANCEL: (id: string) => `task/${id}/cancel`,
   },
   BOT: {
     STATUSES: "bot/statuses",

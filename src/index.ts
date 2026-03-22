@@ -69,6 +69,7 @@ async function bootstrap() {
     await connectMongo();
     await new ContextService().syncAllToDisk();
     await startActiveBots();
+    botManager.startReminderScheduler();
   } catch (error: any) {
     logger.error(`❌ Gagal: ${error.message}`);
     process.exit(1);

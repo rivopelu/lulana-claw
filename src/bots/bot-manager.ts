@@ -4,8 +4,25 @@ import logger from "../configs/logger";
 import SessionService, { type ChatType } from "../services/session.service";
 import AiService from "../services/ai.service";
 import ContextService from "../services/context.service";
+import TaskService, { parseRemindTime, type TaskType } from "../services/task.service";
+import TaskRepository from "../repositories/task.repository";
 import ClientRepository from "../repositories/client.repository";
 import AiModelRepository from "../repositories/ai-model.repository";
+
+// ── Task capability prompt injected into every message system prompt ────────
+// AI appends [TASK_CREATE:{...}] at the end of its reply when it needs to create a task.
+// This works across all models/providers regardless of function-calling support.
+const TASK_CAPABILITY_PROMPT = `
+Kamu memiliki kemampuan menyimpan task, reminder, catatan, meeting, dan deadline.
+Jika pengguna meminta membuat reminder/task/catatan/meeting/deadline, respons seperti biasa DAN tambahkan di baris paling akhir (jangan di tengah teks):
+[TASK_CREATE:{"type":"...","title":"...","description":"...","remind_at_text":"..."}]
+Aturan:
+- type: "task" | "reminder" | "notes" | "meeting" | "deadline"
+- title: wajib, judul singkat
+- description: opsional, boleh dihilangkan
+- remind_at_text: opsional — format: HH:MM (misal 10:00), DD/MM HH:MM (misal 25/03 14:00), 30m, 2h, 1d
+- JANGAN tampilkan atau jelaskan blok [TASK_CREATE:...] ke pengguna, cukup tambahkan di akhir
+- Hanya tambahkan jika pengguna benar-benar meminta menyimpan/mengingatkan sesuatu`.trim();
 
 export type BotStatus = "starting" | "running" | "stopping" | "stopped" | "error";
 
@@ -51,6 +68,8 @@ class BotManager {
   private sessionService = new SessionService();
   private aiService = new AiService();
   private contextService = new ContextService();
+  private taskService = new TaskService();
+  private taskRepository = new TaskRepository();
   private clientRepository = new ClientRepository();
   private aiModelRepository = new AiModelRepository();
 
@@ -68,7 +87,47 @@ class BotManager {
     });
   }
 
+  private schedulerStarted = false;
+
   private constructor() {}
+
+  /** Start the global reminder scheduler (runs once, shared across all bots) */
+  startReminderScheduler(): void {
+    if (this.schedulerStarted) return;
+    this.schedulerStarted = true;
+
+    setInterval(async () => {
+      try {
+        const due = await this.taskRepository.findDueReminders(Date.now());
+        for (const task of due) {
+          const entry = this.bots.get(task.client_id);
+          if (!entry || entry.status !== "running") continue;
+
+          const TYPE_EMOJI: Record<string, string> = {
+            task: "📋", reminder: "⏰", notes: "📝", meeting: "🤝", deadline: "🚨",
+          };
+          const emoji = TYPE_EMOJI[task.type ?? "task"] ?? "📋";
+          const desc = task.description ? `\n${task.description}` : "";
+
+          try {
+            await entry.bot.api.sendMessage(
+              task.chat_id,
+              `${emoji} *Reminder:* ${task.title}${desc}`,
+              { parse_mode: "Markdown" },
+            );
+            await this.taskRepository.update(task.id, { reminded: true });
+            logger.info(`[Scheduler] Reminder sent for task ${task.id}`);
+          } catch (err) {
+            logger.error(`[Scheduler] Failed to send reminder for task ${task.id}: ${(err as Error).message}`);
+          }
+        }
+      } catch (err) {
+        logger.error(`[Scheduler] Error checking reminders: ${(err as Error).message}`);
+      }
+    }, 30_000); // check every 30 seconds
+
+    logger.info("[Scheduler] Reminder scheduler started");
+  }
 
   static getInstance(): BotManager {
     if (!BotManager._instance) BotManager._instance = new BotManager();
@@ -181,6 +240,161 @@ class BotManager {
       await ctx.reply(`✅ Model set to *${model.name}* (\`${model.model_id}\`) for this session.`, {
         parse_mode: "Markdown",
       });
+    });
+
+    // ── /task ──────────────────────────────────────────────────────────────
+    // /task <title>                     → create task (no reminder)
+    // /task <title> | <time>            → create task with reminder
+    // /task reminder <title> | <time>   → type=reminder
+    // /task notes <text>                → type=notes
+    // /task meeting <title> | <time>    → type=meeting
+    // /task deadline <title> | <time>   → type=deadline
+    bot.command("task", async (ctx) => {
+      const arg = ctx.match?.trim();
+      if (!arg) {
+        await ctx.reply(
+          "📋 *Cara pakai /task:*\n" +
+            "`/task Beli kopi` — buat task\n" +
+            "`/task Beli kopi | 30m` — dengan reminder 30 menit lagi\n" +
+            "`/task Beli kopi | 14:30` — reminder jam 14:30\n" +
+            "`/task Beli kopi | 25/12 09:00` — reminder tanggal tertentu\n\n" +
+            "*Tipe:* `reminder` | `notes` | `meeting` | `deadline`\n" +
+            "`/task reminder Minum obat | 1h`",
+          { parse_mode: "Markdown" },
+        );
+        return;
+      }
+
+      const chatId = ctx.chat.id;
+      const fromId = ctx.from?.id?.toString() ?? "system";
+      const session = await this.sessionService.getSession(clientId, chatId);
+
+      // Parse type prefix
+      const typeKeywords = ["reminder", "notes", "meeting", "deadline", "task"] as const;
+      type TType = (typeof typeKeywords)[number];
+      let taskType: TType = "task";
+      let rest = arg;
+      for (const kw of typeKeywords) {
+        if (rest.toLowerCase().startsWith(kw + " ")) {
+          taskType = kw;
+          rest = rest.slice(kw.length + 1).trim();
+          break;
+        }
+      }
+
+      // Parse title | time
+      const pipeIdx = rest.lastIndexOf("|");
+      let title = rest;
+      let remindAt: number | undefined;
+      if (pipeIdx !== -1) {
+        title = rest.slice(0, pipeIdx).trim();
+        const timeStr = rest.slice(pipeIdx + 1).trim();
+        const parsed = parseRemindTime(timeStr);
+        if (!parsed) {
+          await ctx.reply(
+            "❌ Format waktu tidak dikenali.\nContoh: `30m` `2h` `1d` `14:30` `25/12 09:00`",
+            { parse_mode: "Markdown" },
+          );
+          return;
+        }
+        remindAt = parsed;
+      }
+
+      if (!title) {
+        await ctx.reply("❌ Judul task tidak boleh kosong.");
+        return;
+      }
+
+      // Get client accountId via ai model or client record
+      const clientRecord = await this.clientRepository.findById(clientId);
+      if (!clientRecord) {
+        await ctx.reply("❌ Client tidak ditemukan.");
+        return;
+      }
+
+      const task = await this.taskService.create(
+        {
+          client_id: clientId,
+          chat_id: chatId,
+          session_id: session?.id,
+          type: taskType,
+          title,
+          remind_at: remindAt,
+        },
+        clientRecord.account_id,
+      );
+
+      const TYPE_EMOJI: Record<TType, string> = {
+        task: "📋",
+        reminder: "⏰",
+        notes: "📝",
+        meeting: "🤝",
+        deadline: "🚨",
+      };
+
+      const remindInfo = remindAt
+        ? `\n⏰ Reminder: *${new Date(remindAt).toLocaleString("id-ID")}*`
+        : "";
+      await ctx.reply(
+        `${TYPE_EMOJI[taskType]} *${title}* disimpan!\nID: \`${task.id.slice(-8)}\`${remindInfo}`,
+        { parse_mode: "Markdown" },
+      );
+    });
+
+    // ── /tasks ─────────────────────────────────────────────────────────────
+    bot.command("tasks", async (ctx) => {
+      const chatId = ctx.chat.id;
+      const clientRecord = await this.clientRepository.findById(clientId);
+      if (!clientRecord) return;
+
+      const tasks = await this.taskService.getByChatId(clientId, chatId, "pending");
+
+      if (tasks.length === 0) {
+        await ctx.reply("📭 Tidak ada task yang pending.");
+        return;
+      }
+
+      const TYPE_EMOJI: Record<string, string> = {
+        task: "📋", reminder: "⏰", notes: "📝", meeting: "🤝", deadline: "🚨",
+      };
+
+      const lines = tasks.map((t, i) => {
+        const remind = t.remind_at
+          ? ` — ⏰ ${new Date(t.remind_at).toLocaleString("id-ID")}`
+          : "";
+        return `${i + 1}. ${TYPE_EMOJI[t.type] ?? "📋"} *${t.title}*${remind}\n   ID: \`${t.id.slice(-8)}\``;
+      });
+
+      await ctx.reply(
+        `📋 *Task Pending (${tasks.length}):*\n\n${lines.join("\n\n")}\n\n_Ketik /donetask <ID> untuk selesaikan_`,
+        { parse_mode: "Markdown" },
+      );
+    });
+
+    // ── /donetask ──────────────────────────────────────────────────────────
+    bot.command("donetask", async (ctx) => {
+      const idSuffix = ctx.match?.trim();
+      if (!idSuffix) {
+        await ctx.reply("Usage: `/donetask <8-char ID>`\nDapat ID dari /tasks", {
+          parse_mode: "Markdown",
+        });
+        return;
+      }
+
+      const chatId = ctx.chat.id;
+      const clientRecord = await this.clientRepository.findById(clientId);
+      if (!clientRecord) return;
+
+      const tasks = await this.taskService.getByChatId(clientId, chatId, "pending");
+      const match = tasks.find((t) => t.id.endsWith(idSuffix) || t.id === idSuffix);
+
+      if (!match) {
+        await ctx.reply("❌ Task tidak ditemukan. Cek ID dengan /tasks");
+        return;
+      }
+
+      await this.taskService.markDone(match.id, clientRecord.account_id);
+      await ctx.reply(`✅ *${match.title}* selesai!`, { parse_mode: "Markdown" });
     });
 
     // ── /updatecontext ─────────────────────────────────────────────────────
@@ -357,17 +571,25 @@ Hasilkan dokumen konteks yang akan digunakan sebagai panduan perilaku asisten di
           // 5. Fetch history
           const history = await this.sessionService.getHistory(session.id, HISTORY_LIMIT + 1);
 
-          // 5b. Build system prompt from contexts
+          // 5b. Build system prompt from contexts + current time + task capability
           const entityMode = clientRecord?.entity_mode ?? "per_session";
-          const systemPrompt = await this.contextService.buildSystemPrompt(
+          const baseSystemPrompt = await this.contextService.buildSystemPrompt(
             aiModel.account_id,
             clientId,
             session.id,
             entityMode,
           );
+          const nowStr = new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
+          const systemPrompt = [
+            baseSystemPrompt,
+            `[Waktu sekarang: ${nowStr}]`,
+            TASK_CAPABILITY_PROMPT,
+          ]
+            .filter(Boolean)
+            .join("\n\n");
 
-          // 6. Call AI with exponential backoff (3 retries)
-          const reply = await withRetry(
+          // 6. Call AI with exponential backoff
+          const rawReply = await withRetry(
             () =>
               this.aiService.chat(
                 aiModel.api_key,
@@ -375,15 +597,74 @@ Hasilkan dokumen konteks yang akan digunakan sebagai panduan perilaku asisten di
                 aiModel.provider,
                 history.slice(0, -1),
                 userText,
-                systemPrompt || undefined,
+                systemPrompt,
               ),
             label,
           );
 
-          // 7. Reply
-          await ctx.reply(reply);
+          // 6b. Parse [TASK_CREATE:{...}] markers from the AI response
+          const TASK_MARKER_RE = /\[TASK_CREATE:([\s\S]*?)\]/g;
+          const TYPE_EMOJI: Record<string, string> = {
+            task: "📋", reminder: "⏰", notes: "📝", meeting: "🤝", deadline: "🚨",
+          };
+          const taskConfirmations: string[] = [];
+          let match: RegExpExecArray | null;
 
-          // 8. Save assistant reply
+          while ((match = TASK_MARKER_RE.exec(rawReply)) !== null) {
+            try {
+              const args = JSON.parse(match[1]) as {
+                type?: string;
+                title?: string;
+                description?: string;
+                remind_at_text?: string;
+              };
+              if (!args.title) continue;
+
+              const taskType: TaskType = (
+                ["task", "reminder", "notes", "meeting", "deadline"] as TaskType[]
+              ).includes(args.type as TaskType)
+                ? (args.type as TaskType)
+                : "task";
+
+              const remindAt = args.remind_at_text
+                ? (parseRemindTime(args.remind_at_text) ?? undefined)
+                : undefined;
+
+              const task = await this.taskService.create(
+                {
+                  client_id: clientId,
+                  chat_id: chatId,
+                  session_id: session?.id,
+                  type: taskType,
+                  title: args.title,
+                  description: args.description,
+                  remind_at: remindAt,
+                },
+                aiModel.account_id,
+              );
+
+              const emoji = TYPE_EMOJI[taskType] ?? "📋";
+              const remindInfo = remindAt
+                ? ` — ⏰ ${new Date(remindAt).toLocaleString("id-ID")}`
+                : "";
+              taskConfirmations.push(`${emoji} *${args.title}*${remindInfo} \`[${task.id.slice(-8)}]\``);
+              logger.info(`${label} Task created via AI: ${task.id} type=${taskType}`);
+            } catch (tcErr) {
+              logger.error(`${label} task marker parse error: ${(tcErr as Error).message}`);
+            }
+          }
+
+          // 7. Clean marker from reply text + append confirmations
+          let reply = rawReply.replace(/\[TASK_CREATE:[\s\S]*?\]/g, "").trim();
+          if (taskConfirmations.length > 0) {
+            const confirmBlock = `✅ Tersimpan:\n${taskConfirmations.join("\n")}`;
+            reply = reply ? `${reply}\n\n${confirmBlock}` : confirmBlock;
+          }
+          if (!reply) reply = "Sorry, I could not generate a response.";
+
+          await ctx.reply(reply, { parse_mode: "Markdown" });
+
+          // 8. Save assistant reply (without the marker)
           await this.sessionService.addMessage(session.id, "assistant", reply);
         } catch (err) {
           const apiErr = err instanceof OpenAI.APIError ? err : null;

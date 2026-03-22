@@ -8,6 +8,7 @@ import { BotController } from "../controllers/bot.controller";
 import { AiModelController } from "../controllers/ai-model.controller";
 import { SessionController } from "../controllers/session.controller";
 import { ContextController } from "../controllers/context.controller";
+import { TaskController } from "../controllers/task.controller";
 
 const appRoutes = new Hono();
 
@@ -20,6 +21,7 @@ const controllers = [
   AiModelController,
   SessionController,
   ContextController,
+  TaskController,
 ];
 
 registerControllers(controllers, appRoutes);

@@ -10,6 +10,7 @@ import { SessionsPage } from "@/pages/sessions/SessionsPage"
 import { SessionDetailPage } from "@/pages/sessions/SessionDetailPage"
 import { OpenRouterCallbackPage } from "@/pages/ai-models/OpenRouterCallbackPage"
 import { ContextsPage } from "@/pages/contexts/ContextsPage"
+import { TasksPage } from "@/pages/tasks/TasksPage"
 
 export default function App() {
   return (
@@ -33,6 +34,7 @@ export default function App() {
           <Route path="/sessions/:id" element={<SessionDetailPage />} />
           <Route path="/ai-models" element={<AiModelsPage />} />
           <Route path="/contexts" element={<ContextsPage />} />
+          <Route path="/tasks" element={<TasksPage />} />
         </Route>
       </Route>
 
