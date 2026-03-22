@@ -4,8 +4,7 @@ import { AppShell } from "@/components/layout/AppShell"
 import { SetupPage } from "@/pages/auth/SetupPage"
 import { LoginPage } from "@/pages/auth/LoginPage"
 import { DashboardPage } from "@/pages/dashboard/DashboardPage"
-import { BudgetsPage } from "@/pages/budgets/BudgetsPage"
-import { ReportsPage } from "@/pages/reports/ReportsPage"
+import { ClientsPage } from "@/pages/clients/ClientsPage"
 
 export default function App() {
   return (
@@ -21,8 +20,7 @@ export default function App() {
         <Route element={<AppShell />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/budgets" element={<BudgetsPage />} />
-          <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/clients" element={<ClientsPage />} />
         </Route>
       </Route>
 

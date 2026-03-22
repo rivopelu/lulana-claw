@@ -2,10 +2,10 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { Navigate, useNavigate } from "react-router"
+import { Bot } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { useSetup, useSignIn } from "@/hooks/useAuth"
 import { getToken } from "@/stores/authStore"
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner"
@@ -48,19 +48,30 @@ export function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle>Luluna Claw</CardTitle>
-          <CardDescription>Sign in to your account</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <div className="w-full max-w-sm">
+        {/* Brand */}
+        <div className="mb-8 flex flex-col items-center gap-3">
+          <div
+            className="flex h-12 w-12 items-center justify-center rounded-xl"
+            style={{ backgroundColor: "var(--color-primary)" }}
+          >
+            <Bot className="h-6 w-6 text-white" />
+          </div>
+          <div className="text-center">
+            <h1 className="text-xl font-semibold">Luluna Claw</h1>
+            <p className="text-sm text-muted-foreground">Sign in to your account</p>
+          </div>
+        </div>
+
+        {/* Form */}
+        <div className="rounded-xl border bg-card p-6 shadow-sm">
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-1.5">
               <Label htmlFor="email">Email</Label>
               <Input id="email" type="email" autoComplete="email" {...register("email")} />
               {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
             </div>
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-1.5">
               <Label htmlFor="password">Password</Label>
               <Input
                 id="password"
@@ -73,14 +84,16 @@ export function LoginPage() {
               )}
             </div>
             {errors.root && (
-              <p className="text-sm text-destructive">{errors.root.message}</p>
+              <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {errors.root.message}
+              </p>
             )}
-            <Button type="submit" disabled={signIn.isPending}>
+            <Button type="submit" className="w-full" disabled={signIn.isPending}>
               {signIn.isPending ? "Signing in..." : "Sign In"}
             </Button>
           </form>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   )
 }

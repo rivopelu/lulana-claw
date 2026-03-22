@@ -19,8 +19,8 @@ app.get("/", (c) => {
   return c.json({ message: "welcome" });
 });
 
-app.use("/assets/*", serveStatic({ root: "./client/dist" }))
-app.get("*", serveStatic({ path: "./client/dist/index.html" }))
+app.use("/assets/*", serveStatic({ root: "./client/dist" }));
+app.get("*", serveStatic({ path: "./client/dist/index.html" }));
 
 async function bootstrap() {
   try {

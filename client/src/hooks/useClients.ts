@@ -30,10 +30,59 @@ export function useCreateClient() {
   })
 }
 
+export function useUpdateClient() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: { name: string } }) =>
+      apiPut<BaseResponse<null>>(API.CLIENT.DETAIL(id), body),
+    onSuccess: (_data, { id }) => {
+      qc.invalidateQueries({ queryKey: ["clients"] })
+      qc.invalidateQueries({ queryKey: ["clients", id] })
+    },
+  })
+}
+
 export function useDeleteClient() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => apiDelete(API.CLIENT.DETAIL(id)),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["clients"] }),
+  })
+}
+
+export function useAddCredential() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ clientId, body }: { clientId: string; body: { key: string; value: string } }) =>
+      apiPost<BaseResponse<null>>(API.CLIENT.CREDENTIAL(clientId), body),
+    onSuccess: (_data, { clientId }) =>
+      qc.invalidateQueries({ queryKey: ["clients", clientId] }),
+  })
+}
+
+export function useUpdateCredential() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      clientId,
+      credId,
+      body,
+    }: {
+      clientId: string
+      credId: string
+      body: { value: string }
+    }) => apiPut<BaseResponse<null>>(API.CLIENT.CREDENTIAL_ITEM(clientId, credId), body),
+    onSuccess: (_data, { clientId }) =>
+      qc.invalidateQueries({ queryKey: ["clients", clientId] }),
+  })
+}
+
+export function useDeleteCredential() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ clientId, credId }: { clientId: string; credId: string }) =>
+      apiDelete(API.CLIENT.CREDENTIAL_ITEM(clientId, credId)),
+    onSuccess: (_data, { clientId }) =>
+      qc.invalidateQueries({ queryKey: ["clients", clientId] }),
   })
 }
