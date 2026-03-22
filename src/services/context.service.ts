@@ -163,6 +163,46 @@ export default class ContextService {
     return all.map((ctx) => `## ${ctx.name}\n\n${ctx.content}`).join("\n\n---\n\n");
   }
 
+  /** Get the auto-generated context for a session (created by /updatecontext) */
+  async getAutoContext(sessionId: string): Promise<ResponseContext | null> {
+    const ctx = await this.repository.findAutoBySessionId(sessionId);
+    return ctx ? toResponse(ctx) : null;
+  }
+
+  /** Update a context by its id directly (used by bot after generating new content) */
+  async updateById(contextId: string, data: { content: string }): Promise<void> {
+    const ctx = await this.repository.findById(contextId);
+    if (!ctx) throw new NotFoundException("Context not found");
+    await this.repository.update(contextId, { content: data.content });
+    const updated = await this.repository.findById(contextId);
+    if (updated) this.writeToDisk(updated);
+  }
+
+  /** Create an auto-generated session context from /updatecontext command */
+  async createAutoContext(
+    sessionId: string,
+    accountId: string,
+    clientId: string,
+    sessionName: string,
+    content: string,
+    createdBy: string,
+  ): Promise<void> {
+    const input: CreateContextInput = {
+      context_id: generateId(),
+      account_id: accountId,
+      name: `auto:${sessionName}`,
+      type: "session",
+      category: "custom",
+      content,
+      client_id: clientId,
+      session_id: sessionId,
+      order: 99,
+    };
+    const ctx = await this.repository.create(input);
+    this.writeToDisk(ctx);
+    logger.info(`[ContextService] Auto context created for session ${sessionId}`);
+  }
+
   private writeToDisk(ctx: IContext): void {
     ensureContextsDir();
     const filePath = contextFilePath(ctx);

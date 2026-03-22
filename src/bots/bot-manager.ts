@@ -76,6 +76,17 @@ class BotManager {
   }
 
   private registerHandlers(bot: Bot, clientId: string): void {
+    // ── Debug: log every incoming update ───────────────────────────────────
+    bot.use((ctx, next) => {
+      const msg = ctx.message;
+      if (msg) {
+        logger.info(
+          `[Bot:${clientId}] update — chat:${msg.chat.id} type:${msg.chat.type} text:${msg.text ?? "(no text)"}`,
+        );
+      }
+      return next();
+    });
+
     // ── /setup <name> ──────────────────────────────────────────────────────
     bot.command("setup", async (ctx) => {
       const name = ctx.match?.trim();
@@ -172,12 +183,141 @@ class BotManager {
       });
     });
 
+    // ── /updatecontext ─────────────────────────────────────────────────────
+    // Analyzes session chat history and auto-generates/updates a session context
+    bot.command("updatecontext", async (ctx) => {
+      const chatId = ctx.chat.id;
+      const fromId = ctx.from?.id?.toString() ?? "system";
+
+      const session = await this.sessionService.getSession(clientId, chatId);
+      if (!session) {
+        await ctx.reply("⚙️ No active session. Run /setup <name> first.");
+        return;
+      }
+
+      const clientRecord = await this.clientRepository.findById(clientId);
+      const modelId = session.ai_model_id ?? clientRecord?.ai_model_id;
+      if (!modelId) {
+        await ctx.reply("⚠️ No AI model assigned to this session.");
+        return;
+      }
+      const aiModel = await this.aiModelRepository.findById(modelId);
+      if (!aiModel) {
+        await ctx.reply("⚠️ Assigned AI model not found.");
+        return;
+      }
+
+      await ctx.reply("🔍 Menganalisa riwayat percakapan...");
+      await ctx.replyWithChatAction("typing");
+
+      try {
+        // Fetch last 200 messages for analysis
+        const history = await this.sessionService.getHistory(session.id, 200);
+        if (history.length < 3) {
+          await ctx.reply("⚠️ Riwayat percakapan terlalu sedikit untuk dianalisa. Chat dulu lebih banyak!");
+          return;
+        }
+
+        const historyText = history
+          .map((m) => `[${m.role.toUpperCase()}${m.from_name ? ` - ${m.from_name}` : ""}]: ${m.content}`)
+          .join("\n");
+
+        const metaPrompt = `Kamu adalah analis percakapan AI. Tugasmu menganalisa riwayat chat berikut dan menghasilkan dokumen konteks komprehensif.
+
+Analisa dan ekstrak:
+1. **Kepribadian & gaya komunikasi** yang digunakan asisten (formal/santai, humor, dll)
+2. **Instruksi & preferensi** yang diberikan oleh pengguna
+3. **Pengetahuan & topik** yang sering dibahas
+4. **Pola interaksi** (bagaimana asisten merespons, strategi yang berhasil)
+5. **Hal-hal yang harus dihindari** berdasarkan feedback negatif
+
+Tulis dalam format markdown yang jelas dan terstruktur. Gunakan bahasa yang sama dengan percakapan (Indonesia/Inggris).
+
+Riwayat percakapan:
+---
+${historyText}
+---
+
+Hasilkan dokumen konteks yang akan digunakan sebagai panduan perilaku asisten di sesi ini.`;
+
+        const generatedContext = await withRetry(
+          () =>
+            this.aiService.chat(
+              aiModel.api_key,
+              aiModel.model_id,
+              aiModel.provider,
+              [],
+              metaPrompt,
+            ),
+          `[Bot:${clientId}:updatecontext]`,
+        );
+
+        // Save as session context (upsert: delete old auto-generated one first)
+        const existing = await this.contextService.getAutoContext(session.id);
+        if (existing) {
+          await this.contextService.updateById(existing.id, {
+            content: generatedContext,
+          });
+          await ctx.reply(
+            `✅ Konteks sesi *"${session.name}"* berhasil diperbarui dari ${history.length} pesan.\n\n_Konteks baru akan aktif pada pesan berikutnya._`,
+            { parse_mode: "Markdown" },
+          );
+        } else {
+          await this.contextService.createAutoContext(
+            session.id,
+            aiModel.account_id,
+            clientId,
+            session.name,
+            generatedContext,
+            fromId,
+          );
+          await ctx.reply(
+            `✅ Konteks sesi *"${session.name}"* berhasil dibuat dari ${history.length} pesan.\n\n_Konteks akan aktif pada pesan berikutnya._`,
+            { parse_mode: "Markdown" },
+          );
+        }
+      } catch (err) {
+        logger.error(`[Bot:${clientId}] /updatecontext error: ${(err as Error).message}`);
+        await ctx.reply("❌ Gagal menganalisa percakapan. Coba lagi nanti.");
+      }
+    });
+
     // ── Regular messages ───────────────────────────────────────────────────
     bot.on("message:text", (ctx) => {
       if (ctx.message.text.startsWith("/")) return;
 
+      const chatType = ctx.chat.type;
+      const isGroup = chatType === "group" || chatType === "supergroup";
+      const rawText = ctx.message.text;
+
+      // In groups: only respond when mentioned or when replying to the bot
+      if (isGroup) {
+        const botId = ctx.me.id;
+        const botUsername = ctx.me.username?.toLowerCase() ?? "";
+
+        // Simple string check — reliable across all Unicode/emoji edge cases
+        const isMentioned =
+          botUsername.length > 0 &&
+          rawText.toLowerCase().includes(`@${botUsername}`);
+        const isReplyToBot = ctx.message.reply_to_message?.from?.id === botId;
+
+        logger.info(
+          `[Bot:${clientId}] group msg — mention:${isMentioned} replyToBot:${isReplyToBot} botUser:@${botUsername} text:"${rawText.slice(0, 80)}"`,
+        );
+
+        if (!isMentioned && !isReplyToBot) return;
+      }
+
       const chatId = ctx.chat.id;
-      const userText = ctx.message.text;
+      // Strip @mention from the message text so AI doesn't see it
+      const userText =
+        isGroup && ctx.me.username
+          ? rawText.replace(new RegExp(`@${ctx.me.username}`, "gi"), "").trim()
+          : rawText;
+
+      // Ignore empty messages (e.g. user sent only @botname with no text)
+      if (!userText) return;
+
       const fromId = ctx.from?.id?.toString();
       const fromName = ctx.from?.first_name ?? "User";
       const label = `[Bot:${clientId}:${chatId}]`;
@@ -286,8 +426,17 @@ class BotManager {
     this.bots.set(clientId, entry);
     logger.info(`[BotManager] Starting bot for client ${clientId}`);
 
+    // Clear any registered webhook so long-polling can receive all updates
+    try {
+      await bot.api.deleteWebhook({ drop_pending_updates: false });
+      logger.info(`[BotManager] Webhook cleared for client ${clientId}`);
+    } catch (err) {
+      logger.warn(`[BotManager] Could not clear webhook for client ${clientId}: ${(err as Error).message}`);
+    }
+
     bot
       .start({
+        allowed_updates: ["message", "edited_message", "callback_query"],
         onStart: () => {
           entry.status = "running";
           entry.error = undefined;

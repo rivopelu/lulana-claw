@@ -7,3 +7,4 @@ client/node_modules
 dist
 .env*
 !.env.example
+/contexts

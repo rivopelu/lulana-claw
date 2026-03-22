@@ -75,4 +75,15 @@ export default class ContextRepository {
       { active: false, updated_at: new Date() },
     );
   }
+
+  /** Find the auto-generated context for a session (tagged with name prefix "auto:") */
+  async findAutoBySessionId(sessionId: string): Promise<IContext | null> {
+    return ContextModel.findOne({
+      session_id: sessionId,
+      type: "session",
+      category: "custom",
+      name: /^auto:/,
+      active: true,
+    });
+  }
 }
