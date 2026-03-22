@@ -1,5 +1,6 @@
 export const ROUTES = {
   LOGIN: "/login",
+  SETUP: "/setup",
   DASHBOARD: "/dashboard",
   CLIENTS: "/clients",
   SETTINGS: "/settings",
@@ -7,6 +8,7 @@ export const ROUTES = {
 
 export const API = {
   AUTH: {
+    SETUP: "auth/setup",
     SIGN_IN: "auth/sign-in",
     SIGN_UP: "auth/sign-up",
     ME: "auth/me",

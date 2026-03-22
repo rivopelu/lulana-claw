@@ -10,6 +10,12 @@ export interface SignInRequest {
   password: string
 }
 
+export interface SignUpRequest {
+  name: string
+  email: string
+  password: string
+}
+
 export interface SignInResponse {
   token: string
   account: User

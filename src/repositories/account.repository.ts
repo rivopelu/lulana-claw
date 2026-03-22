@@ -1,8 +1,16 @@
 import { db } from "../database/database";
 import { type Account, AccountEntity, type NewAccount } from "../entities/pg/account.entity";
-import { and, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 
 export default class AccountRepository {
+  async existsAny(): Promise<boolean> {
+    const data = await db
+      .select({ count: count() })
+      .from(AccountEntity)
+      .where(eq(AccountEntity.active, true));
+    return data[0].count > 0;
+  }
+
   async existByEmail(email: string): Promise<boolean> {
     const data = await db
       .select({ id: AccountEntity.id })

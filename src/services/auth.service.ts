@@ -29,6 +29,18 @@ export class AuthService {
     return account;
   }
 
+  async isInitialized(): Promise<boolean> {
+    return this.accountRepository.existsAny();
+  }
+
+  async setupFirstAccount(data: RequestSignUp) {
+    const initialized = await this.isInitialized();
+    if (initialized) {
+      throw new BadRequestException(t("error.already_initialized"));
+    }
+    await this.createAccount(data);
+  }
+
   async createAccount(data: RequestSignUp) {
     const checkEmail = await this.accountRepository.existByEmail(data.email);
     if (checkEmail) {

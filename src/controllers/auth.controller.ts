@@ -14,7 +14,24 @@ export class AuthController {
   private authService = new AuthService();
   private accountService = new AccountService();
 
+  /** Public — check whether the system has been initialized (any account exists) */
+  @Get("setup")
+  async checkSetup(c: Context) {
+    const initialized = await this.authService.isInitialized();
+    return c.json(responseHelper.data({ initialized }));
+  }
+
+  /** Public — only succeeds when no account exists yet (first-time setup) */
+  @Post("setup")
+  async setupFirstAccount(c: Context) {
+    const body: RequestSignUp = await c.req.json<RequestSignUp>();
+    await this.authService.setupFirstAccount(body);
+    return c.json(responseHelper.success("Account created. Please sign in."));
+  }
+
+  /** Protected — create an account; only accessible by an authenticated user */
   @Post("sign-up")
+  @Middleware([JwtMiddleware])
   async createAccount(c: Context) {
     const body: RequestSignUp = await c.req.json<RequestSignUp>();
     await this.authService.createAccount(body);
