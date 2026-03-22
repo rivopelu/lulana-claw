@@ -29,11 +29,12 @@ export default class AiService {
     provider: string,
     history: ISessionMessage[],
     userText: string,
+    systemPrompt?: string,
   ): Promise<string> {
     const client = new OpenAI({ apiKey, baseURL: BASE_URLS[provider] });
 
     const messages: AiMessage[] = [
-      { role: "system", content: DEFAULT_SYSTEM_PROMPT },
+      { role: "system", content: systemPrompt?.trim() || DEFAULT_SYSTEM_PROMPT },
       ...history.map((m) => ({ role: m.role, content: m.content })),
       { role: "user", content: userText },
     ];

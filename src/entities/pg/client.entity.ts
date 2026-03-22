@@ -5,6 +5,7 @@ import { AccountEntity } from "./account.entity";
 import { AiModelEntity } from "./ai-model.entity";
 
 export const clientTypeEnum = pgEnum("client_type", ["telegram", "discord", "whatsapp", "http"]);
+export const entityModeEnum = pgEnum("entity_mode", ["single", "per_session"]);
 
 export const ClientEntity = pgTable("client", {
   ...entityId,
@@ -14,6 +15,7 @@ export const ClientEntity = pgTable("client", {
   name: varchar("name", { length: 255 }).notNull(),
   type: clientTypeEnum("type").notNull(),
   ai_model_id: varchar("ai_model_id", { length: 255 }).references(() => AiModelEntity.id),
+  entity_mode: entityModeEnum("entity_mode").default("per_session").notNull(),
   ...baseEntity,
 });
 

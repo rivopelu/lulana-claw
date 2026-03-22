@@ -39,7 +39,7 @@ export function DashboardPage() {
   return (
     <div>
       <PageHeader
-        title={me ? `Hello, ${me.name.split(" ")[0]}` : "Dashboard"}
+        title={me?.name ? `Hello, ${me.name.split(" ")[0]}` : "Dashboard"}
         description="Overview of your Luluna Claw setup"
       />
 

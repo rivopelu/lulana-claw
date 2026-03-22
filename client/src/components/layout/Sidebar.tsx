@@ -1,6 +1,6 @@
 import { Link, useLocation, useNavigate } from "react-router"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, Bot, Brain, MessageSquare, LogOut } from "lucide-react"
+import { LayoutDashboard, Bot, Brain, MessageSquare, LogOut, BookText } from "lucide-react"
 import { useMe, useSignOut } from "@/hooks/useAuth"
 
 const navItems = [
@@ -8,6 +8,7 @@ const navItems = [
   { label: "Clients", path: "/clients", icon: Bot },
   { label: "Sessions", path: "/sessions", icon: MessageSquare },
   { label: "AI Models", path: "/ai-models", icon: Brain },
+  { label: "Contexts", path: "/contexts", icon: BookText },
 ]
 
 export function Sidebar() {

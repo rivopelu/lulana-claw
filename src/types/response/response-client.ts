@@ -18,6 +18,7 @@ export interface ResponseClientSummary {
   name: string;
   type: string;
   ai_model_id: string | null;
+  entity_mode: "single" | "per_session";
   active: boolean;
   created_date: number;
 }

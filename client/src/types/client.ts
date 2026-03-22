@@ -12,6 +12,7 @@ export interface Client {
   name: string
   type: ClientType
   ai_model_id: string | null
+  entity_mode: "single" | "per_session"
   active: boolean
   created_date: number
 }

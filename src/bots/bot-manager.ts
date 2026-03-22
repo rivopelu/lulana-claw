@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import logger from "../configs/logger";
 import SessionService, { type ChatType } from "../services/session.service";
 import AiService from "../services/ai.service";
+import ContextService from "../services/context.service";
 import ClientRepository from "../repositories/client.repository";
 import AiModelRepository from "../repositories/ai-model.repository";
 
@@ -34,7 +35,7 @@ async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
           ? Number(err.headers?.["retry-after"] ?? 0) * 1000 || delays[i]
           : delays[i];
       logger.warn(
-        `${label} retry ${i + 1} in ${retryAfter / 1000}s (status ${(err as OpenAI.APIError).status})`,
+        `${label} retry ${i + 1} in ${retryAfter / 1000}s (status ${(err as InstanceType<typeof OpenAI.APIError>).status})`,
       );
       await new Promise((r) => setTimeout(r, retryAfter));
     }
@@ -49,6 +50,7 @@ class BotManager {
   private chatQueues = new Map<string, Promise<void>>();
   private sessionService = new SessionService();
   private aiService = new AiService();
+  private contextService = new ContextService();
   private clientRepository = new ClientRepository();
   private aiModelRepository = new AiModelRepository();
 
@@ -190,8 +192,8 @@ class BotManager {
         }
 
         // 2. Resolve AI model: session-level → client-level → error
-        const modelId =
-          session.ai_model_id ?? (await this.clientRepository.findById(clientId))?.ai_model_id;
+        const clientRecord = await this.clientRepository.findById(clientId);
+        const modelId = session.ai_model_id ?? clientRecord?.ai_model_id;
         if (!modelId) {
           await ctx.reply(
             "⚠️ No AI model assigned.\nAsk the admin to configure one in the dashboard.",
@@ -215,6 +217,15 @@ class BotManager {
           // 5. Fetch history
           const history = await this.sessionService.getHistory(session.id, HISTORY_LIMIT + 1);
 
+          // 5b. Build system prompt from contexts
+          const entityMode = clientRecord?.entity_mode ?? "per_session";
+          const systemPrompt = await this.contextService.buildSystemPrompt(
+            aiModel.account_id,
+            clientId,
+            session.id,
+            entityMode,
+          );
+
           // 6. Call AI with exponential backoff (3 retries)
           const reply = await withRetry(
             () =>
@@ -224,6 +235,7 @@ class BotManager {
                 aiModel.provider,
                 history.slice(0, -1),
                 userText,
+                systemPrompt || undefined,
               ),
             label,
           );

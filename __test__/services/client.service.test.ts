@@ -22,6 +22,7 @@ const mockClient: Client = {
   name: "Lula Telegram Bot",
   type: "telegram",
   ai_model_id: null,
+  entity_mode: "per_session",
   active: true,
   created_date: 1700000000000,
   created_by: ACCOUNT_ID,

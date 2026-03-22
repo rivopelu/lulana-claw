@@ -9,6 +9,7 @@ import { botManager } from "./bots/bot-manager";
 import { connectMongo } from "./database/mongo";
 import ClientRepository from "./repositories/client.repository";
 import ClientCredentialRepository from "./repositories/client-credential.repository";
+import ContextService from "./services/context.service";
 
 const app = new Hono();
 const port = env.PORT || 8080;
@@ -66,6 +67,7 @@ async function bootstrap() {
     logger.info(`🔥 API initialized on ${server.url}`);
 
     await connectMongo();
+    await new ContextService().syncAllToDisk();
     await startActiveBots();
   } catch (error: any) {
     logger.error(`❌ Gagal: ${error.message}`);

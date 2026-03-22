@@ -34,7 +34,7 @@ export function useConnectOpenRouter() {
 export function useCreateAiModel() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: { name: string; model_id: string; provider: "openai"; api_key: string }) =>
+    mutationFn: (body: { name: string; model_id: string; provider: "openai" | "openrouter" | "gemini" | "anthropic"; api_key: string }) =>
       apiPost<BaseResponse<null>>(API.AI_MODEL.LIST, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["ai-models"] }),
   })

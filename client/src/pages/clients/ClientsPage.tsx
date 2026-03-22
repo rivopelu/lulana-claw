@@ -2,7 +2,7 @@ import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
-import { Plus, Trash2, KeyRound, ChevronRight, Play, Square, RotateCcw, Loader2, Brain } from "lucide-react"
+import { Plus, Trash2, KeyRound, ChevronRight, Play, Square, RotateCcw, Loader2, Brain, Users } from "lucide-react"
 import { PageHeader } from "@/components/layout/PageHeader"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -38,6 +38,7 @@ import {
   useCreateClient,
   useDeleteClient,
   useSetClientModel,
+  useSetEntityMode,
   useAddCredential,
   useUpdateCredential,
   useDeleteCredential,
@@ -506,6 +507,64 @@ function AssignModelDialog({
   )
 }
 
+// ─── Entity mode dialog ────────────────────────────────────────────────────
+
+function EntityModeDialog({
+  clientId,
+  clientName,
+  currentMode,
+  open,
+  onClose,
+}: {
+  clientId: string
+  clientName: string
+  currentMode: "single" | "per_session"
+  open: boolean
+  onClose: () => void
+}) {
+  const setMode = useSetEntityMode()
+  const [selected, setSelected] = useState<"single" | "per_session">(currentMode)
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Entity Mode</DialogTitle>
+          <DialogDescription>
+            Controls how the bot handles identity for{" "}
+            <span className="font-medium text-foreground">{clientName}</span>.
+          </DialogDescription>
+        </DialogHeader>
+
+        <Select value={selected} onValueChange={(v) => setSelected(v as "single" | "per_session")}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="per_session">Per Session — each session has its own identity</SelectItem>
+            <SelectItem value="single">Single Entity — one identity for all sessions</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            onClick={async () => {
+              await setMode.mutateAsync({ id: clientId, entityMode: selected })
+              onClose()
+            }}
+            disabled={setMode.isPending}
+          >
+            {setMode.isPending ? "Saving..." : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ─── Main page ─────────────────────────────────────────────────────────────
 
 export function ClientsPage() {
@@ -523,6 +582,11 @@ export function ClientsPage() {
     id: string
     name: string
     ai_model_id: string | null
+  } | null>(null)
+  const [entityModeClient, setEntityModeClient] = useState<{
+    id: string
+    name: string
+    entity_mode: "single" | "per_session"
   } | null>(null)
 
   return (
@@ -564,6 +628,7 @@ export function ClientsPage() {
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">Name</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">Type</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">AI Model</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Entity Mode</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">Bot Status</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">Controls</th>
                 <th className="px-4 py-3 text-right font-medium text-muted-foreground">Actions</th>
@@ -596,6 +661,23 @@ export function ClientsPage() {
                         ) : (
                           <span className="italic">Assign model</span>
                         )}
+                      </button>
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={() =>
+                          setEntityModeClient({
+                            id: client.id,
+                            name: client.name,
+                            entity_mode: client.entity_mode ?? "per_session",
+                          })
+                        }
+                      >
+                        <Users className="h-3.5 w-3.5 flex-shrink-0" />
+                        <span className="capitalize">
+                          {client.entity_mode === "single" ? "Single" : "Per Session"}
+                        </span>
                       </button>
                     </td>
                     <td className="px-4 py-3">
@@ -655,6 +737,16 @@ export function ClientsPage() {
           clientName={credentialsClient.name}
           open={!!credentialsClient}
           onClose={() => setCredentialsClient(null)}
+        />
+      )}
+
+      {entityModeClient && (
+        <EntityModeDialog
+          clientId={entityModeClient.id}
+          clientName={entityModeClient.name}
+          currentMode={entityModeClient.entity_mode}
+          open={!!entityModeClient}
+          onClose={() => setEntityModeClient(null)}
         />
       )}
 

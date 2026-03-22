@@ -7,6 +7,7 @@ import { ClientController } from "../controllers/client.controller";
 import { BotController } from "../controllers/bot.controller";
 import { AiModelController } from "../controllers/ai-model.controller";
 import { SessionController } from "../controllers/session.controller";
+import { ContextController } from "../controllers/context.controller";
 
 const appRoutes = new Hono();
 
@@ -18,6 +19,7 @@ const controllers = [
   BotController,
   AiModelController,
   SessionController,
+  ContextController,
 ];
 
 registerControllers(controllers, appRoutes);

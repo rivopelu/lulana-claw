@@ -91,6 +91,15 @@ export function useSetClientModel() {
   })
 }
 
+export function useSetEntityMode() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, entityMode }: { id: string; entityMode: "single" | "per_session" }) =>
+      apiPut<BaseResponse<null>>(API.CLIENT.SET_ENTITY_MODE(id), { entity_mode: entityMode }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["clients"] }),
+  })
+}
+
 export function useDeleteClient() {
   const qc = useQueryClient()
   return useMutation({

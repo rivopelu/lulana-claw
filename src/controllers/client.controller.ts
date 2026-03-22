@@ -63,6 +63,18 @@ export class ClientController {
     return c.json(responseHelper.success("Client deleted"));
   }
 
+  @Put(":id/entity-mode")
+  async setEntityMode(c: Context) {
+    const id = c.req.param("id");
+    const accountId = getAccountId(c);
+    const { entity_mode } = await c.req.json<{ entity_mode: "single" | "per_session" }>();
+    if (entity_mode !== "single" && entity_mode !== "per_session") {
+      throw new BadRequestException("entity_mode must be 'single' or 'per_session'");
+    }
+    await this.clientService.setEntityMode(id, entity_mode, accountId);
+    return c.json(responseHelper.success("Entity mode updated"));
+  }
+
   @Put(":id/model")
   async setModel(c: Context) {
     const id = c.req.param("id");

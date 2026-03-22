@@ -7,6 +7,7 @@ export const ROUTES = {
   OPENROUTER_CALLBACK: "/ai-models/openrouter/callback",
   SESSIONS: "/sessions",
   SESSION_DETAIL: (id: string) => `/sessions/${id}`,
+  CONTEXTS: "/contexts",
 } as const
 
 export const API = {
@@ -20,6 +21,7 @@ export const API = {
     LIST: "client",
     DETAIL: (id: string) => `client/${id}`,
     SET_MODEL: (id: string) => `client/${id}/model`,
+    SET_ENTITY_MODE: (id: string) => `client/${id}/entity-mode`,
     CREDENTIAL: (id: string) => `client/${id}/credential`,
     CREDENTIAL_ITEM: (id: string, credId: string) => `client/${id}/credential/${credId}`,
   },
@@ -36,6 +38,10 @@ export const API = {
     BY_CLIENT: (clientId: string) => `session/client/${clientId}`,
     DETAIL: (id: string) => `session/${id}`,
     SET_MODEL: (id: string) => `session/${id}/model`,
+  },
+  CONTEXT: {
+    LIST: "context",
+    DETAIL: (id: string) => `context/${id}`,
   },
   BOT: {
     STATUSES: "bot/statuses",

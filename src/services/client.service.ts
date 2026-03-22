@@ -46,6 +46,7 @@ export default class ClientService {
       name: c.name,
       type: c.type,
       ai_model_id: c.ai_model_id ?? null,
+      entity_mode: c.entity_mode,
       active: c.active,
       created_date: c.created_date,
     }));
@@ -73,6 +74,21 @@ export default class ClientService {
       active: client.active,
       created_date: client.created_date,
     };
+  }
+
+  async setEntityMode(
+    id: string,
+    entityMode: "single" | "per_session",
+    accountId: string,
+  ): Promise<void> {
+    const client = await this.clientRepository.findByIdAndAccountId(id, accountId);
+    if (!client) throw new NotFoundException("Client not found");
+
+    await this.clientRepository.update(id, {
+      entity_mode: entityMode,
+      updated_by: accountId,
+      updated_date: Date.now(),
+    });
   }
 
   async setClientModel(id: string, aiModelId: string | null, accountId: string): Promise<void> {
