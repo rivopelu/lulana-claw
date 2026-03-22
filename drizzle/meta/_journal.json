@@ -15,6 +15,13 @@
       "when": 1774170645306,
       "tag": "0001_remarkable_starfox",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1774171531553,
+      "tag": "0002_premium_lord_hawal",
+      "breakpoints": true
     }
   ]
 }

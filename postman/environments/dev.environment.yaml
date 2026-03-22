@@ -1,2 +1,8 @@
 name: dev
-values: []
+values:
+  - key: base_url
+    value: http://localhost:8090
+    enabled: true
+  - key: token
+    value: ""
+    enabled: true

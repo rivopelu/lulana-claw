@@ -1,3 +1,3 @@
-import type {ResponseAccountData} from "./response-account-data";
+import type { ResponseAccountData } from "./response-account-data";
 
-export type ResponseSignIn = { token: string, account: ResponseAccountData }
+export type ResponseSignIn = { token: string; account: ResponseAccountData };

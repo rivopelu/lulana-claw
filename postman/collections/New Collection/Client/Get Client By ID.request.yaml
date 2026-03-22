@@ -1,0 +1,11 @@
+$kind: http-request
+name: Get Client By ID
+url: "{{base_url}}/api/client/:id"
+method: GET
+headers:
+  - key: Authorization
+    value: "Bearer {{token}}"
+urlParameters:
+  - key: id
+    value: CLIENT_ID_HERE
+order: 3

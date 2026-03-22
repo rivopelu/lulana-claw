@@ -1,0 +1,22 @@
+$kind: http-request
+name: Update Client
+url: "{{base_url}}/api/client/:id"
+method: PUT
+headers:
+  - key: Authorization
+    value: "Bearer {{token}}"
+  - key: Content-Type
+    value: application/json
+urlParameters:
+  - key: id
+    value: CLIENT_ID_HERE
+body:
+  mode: raw
+  raw: |
+    {
+      "name": "Lula Telegram Bot Updated"
+    }
+  options:
+    raw:
+      language: json
+order: 4

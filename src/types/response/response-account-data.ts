@@ -3,4 +3,4 @@ export type ResponseAccountData = {
   id: string;
   email: string;
   profile_picture: string;
-}
+};

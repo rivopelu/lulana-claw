@@ -1,5 +1,5 @@
-import type {Context} from "hono";
-import type {IPaginationParams} from "../types/paginated-params";
+import type { Context } from "hono";
+import type { IPaginationParams } from "../types/paginated-params";
 
 export function getAccountId(c: Context): string {
   return c.get("accountId");

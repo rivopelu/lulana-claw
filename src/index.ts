@@ -1,8 +1,8 @@
 import "reflect-metadata";
-import {Hono} from "hono";
-import {env} from "./configs/env";
+import { Hono } from "hono";
+import { env } from "./configs/env";
 import logger from "./configs/logger";
-import {ErrorHandler} from "./libs/error-handler";
+import { ErrorHandler } from "./libs/error-handler";
 import InitMiddlewares from "./middleware/init-middleware";
 
 const app = new Hono();
@@ -15,7 +15,7 @@ app.get("/panic", () => {
 new InitMiddlewares(app);
 
 app.get("/", (c) => {
-  return c.json({message: "welcome"});
+  return c.json({ message: "welcome" });
 });
 
 async function bootstrap() {
@@ -37,4 +37,4 @@ async function bootstrap() {
 
 bootstrap().then();
 
-export {app};
+export { app };

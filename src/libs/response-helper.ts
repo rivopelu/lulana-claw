@@ -1,14 +1,12 @@
-import type {
-  BaseResponse,
-} from "../types/response/base-response";
+import type { BaseResponse } from "../types/response/base-response";
 
 export class responseHelper {
   static success(message?: string): BaseResponse<null> {
-    return {success: true, message: message || "ok"};
+    return { success: true, message: message || "ok" };
   }
 
   static data<T>(data: T, message: string = "success"): BaseResponse<T> {
-    return {success: true, message, response_data: data};
+    return { success: true, message, response_data: data };
   }
 
   static paginated<T>(
@@ -32,7 +30,7 @@ export class responseHelper {
     };
   }
 
-  static error(message: string, status: number): BaseResponse<null> {
-    return {success: false, message};
+  static error(message: string, _status: number): BaseResponse<null> {
+    return { success: false, message };
   }
 }

@@ -1,0 +1,18 @@
+$kind: http-request
+name: Sign In
+url: "{{base_url}}/api/auth/sign-in"
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  mode: raw
+  raw: |
+    {
+      "email": "rivo@example.com",
+      "password": "password123"
+    }
+  options:
+    raw:
+      language: json
+order: 2

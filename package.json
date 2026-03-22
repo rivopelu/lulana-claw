@@ -1,11 +1,19 @@
 {
   "name": "lulana-claw",
+  "type": "module",
   "scripts": {
     "dev": "bun run --hot --quiet src/index.ts",
     "build": "bun build ./src/index.ts --outdir ./dist --target bun",
     "start": "bun build ./src/index.ts --outdir ./dist --target bun && bun run --quiet dist/index.js",
     "db:generate": "bunx --bun drizzle-kit generate",
-    "db:migrate": "bunx --bun drizzle-kit migrate"
+    "db:migrate": "bunx --bun drizzle-kit migrate",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage",
+    "lint": "bunx eslint src __test__",
+    "lint:fix": "bunx eslint src __test__ --fix",
+    "format": "bunx prettier --write src __test__",
+    "format:check": "bunx prettier --check src __test__",
+    "typecheck": "bunx tsc --noEmit"
   },
   "dependencies": {
     "@hono/zod-validator": "^0.7.6",
@@ -13,7 +21,8 @@
     "drizzle-orm": "^0.45.1",
     "hono": "^4.12.2",
     "hono-decorators": "^0.2.0",
-    "i18next": "^25.8.13",
+    "i18next": "^25.10.3",
+
     "pg": "^8.18.0",
     "picocolors": "^1.1.1",
     "reflect-metadata": "^0.2.2",

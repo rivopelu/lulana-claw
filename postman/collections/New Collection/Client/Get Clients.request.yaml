@@ -1,0 +1,8 @@
+$kind: http-request
+name: Get Clients
+url: "{{base_url}}/api/client?page=0&size=10"
+method: GET
+headers:
+  - key: Authorization
+    value: "Bearer {{token}}"
+order: 2

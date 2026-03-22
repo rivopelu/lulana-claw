@@ -1,5 +1,5 @@
-import {HTTPException} from "hono/http-exception";
-import {HTTP_STATUS} from "../constants/http-status";
+import { HTTPException } from "hono/http-exception";
+import { HTTP_STATUS } from "../constants/http-status";
 
 export class HttpError extends Error {
   constructor(

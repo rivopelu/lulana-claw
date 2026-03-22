@@ -1,0 +1,23 @@
+$kind: http-request
+name: Create Client
+url: "{{base_url}}/api/client"
+method: POST
+headers:
+  - key: Authorization
+    value: "Bearer {{token}}"
+  - key: Content-Type
+    value: application/json
+body:
+  mode: raw
+  raw: |
+    {
+      "name": "Lula Telegram Bot",
+      "type": "telegram",
+      "credentials": [
+        { "key": "bot_token", "value": "YOUR_BOT_TOKEN_HERE" }
+      ]
+    }
+  options:
+    raw:
+      language: json
+order: 1

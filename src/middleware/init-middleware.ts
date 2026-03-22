@@ -1,4 +1,4 @@
-import {Hono} from "hono";
+import type { Hono } from "hono";
 import corsConfig from "../configs/cors.config";
 import appRoutes from "../routes/_app.routes";
 import loggerMiddleware from "./logger-middleware";

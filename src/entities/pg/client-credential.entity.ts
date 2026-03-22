@@ -1,7 +1,7 @@
-import {pgTable, varchar} from "drizzle-orm/pg-core";
-import type {InferInsertModel, InferSelectModel} from "drizzle-orm";
-import {baseEntity, entityId} from "./_base.entity";
-import {ClientEntity} from "./client.entity";
+import { pgTable, varchar } from "drizzle-orm/pg-core";
+import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
+import { baseEntity, entityId } from "./_base.entity";
+import { ClientEntity } from "./client.entity";
 
 /**
  * Stores credentials for each client as individual key-value rows.
@@ -25,11 +25,11 @@ import {ClientEntity} from "./client.entity";
  */
 export const ClientCredentialEntity = pgTable("client_credential", {
   ...entityId,
-  client_id: varchar("client_id", {length: 255})
+  client_id: varchar("client_id", { length: 255 })
     .notNull()
     .references(() => ClientEntity.id),
-  key: varchar("key", {length: 100}).notNull(),
-  value: varchar("value", {length: 1000}).notNull(),
+  key: varchar("key", { length: 100 }).notNull(),
+  value: varchar("value", { length: 1000 }).notNull(),
   ...baseEntity,
 });
 

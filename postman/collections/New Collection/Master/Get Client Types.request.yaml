@@ -1,0 +1,8 @@
+$kind: http-request
+name: Get Client Types
+url: "{{base_url}}/api/master/client-types"
+method: GET
+headers:
+  - key: Authorization
+    value: "Bearer {{token}}"
+order: 1

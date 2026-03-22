@@ -19,11 +19,7 @@ const logFormat = printf(({ level, message, timestamp, stack }) => {
 
 export const logger = createLogger({
   level: "info",
-  format: combine(
-    timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
-    errors({ stack: true }),
-    logFormat,
-  ),
+  format: combine(timestamp({ format: "YYYY-MM-DD HH:mm:ss" }), errors({ stack: true }), logFormat),
   transports: [new transports.Console()],
 });
 

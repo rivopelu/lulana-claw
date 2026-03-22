@@ -1,6 +1,6 @@
-import type {Context, Next} from "hono";
-import {AuthService} from "../services/auth.service";
-import {UnauthorizedException} from "../libs/exception";
+import type { Context, Next } from "hono";
+import { AuthService } from "../services/auth.service";
+import { UnauthorizedException } from "../libs/exception";
 
 const authService = new AuthService();
 const jwtMiddleware = async (c: Context, next: Next) => {
@@ -12,9 +12,7 @@ const jwtMiddleware = async (c: Context, next: Next) => {
 
   const parts = authHeader.split(" ");
   if (parts.length !== 2 || parts[0] !== "Bearer") {
-    throw new UnauthorizedException(
-      "Invalid authorization format. Use: Bearer <token>",
-    );
+    throw new UnauthorizedException("Invalid authorization format. Use: Bearer <token>");
   }
 
   const token = parts[1];

@@ -1,18 +1,17 @@
 import AccountRepository from "../repositories/account.repository";
-import type {RequestSignUp} from "../types/request/request-sign-up";
-import {t} from "i18next";
-import {env} from "../configs/env";
-import type {JWTPayload} from "hono/utils/jwt/types";
-import {sign, verify} from "hono/jwt";
-import {BadRequestException} from "../libs/exception";
-import type {RequestSignIn} from "../types/request/request-sign-in";
-import {generateProfilePicture} from "../libs/string-utils";
-import type {NewAccount} from "../entities/pg/account.entity";
+import type { RequestSignUp } from "../types/request/request-sign-up";
+import { t } from "i18next";
+import { env } from "../configs/env";
+import type { JWTPayload } from "hono/utils/jwt/types";
+import { sign, verify } from "hono/jwt";
+import { BadRequestException } from "../libs/exception";
+import type { RequestSignIn } from "../types/request/request-sign-in";
+import { generateProfilePicture } from "../libs/string-utils";
+import type { NewAccount } from "../entities/pg/account.entity";
 import DateHelper from "../libs/date-helper";
 
 export class AuthService {
   private accountRepository = new AccountRepository();
-
 
   async verifySignIn(data: RequestSignIn) {
     const account = await this.accountRepository.findByEmail(data.email);
@@ -21,10 +20,7 @@ export class AuthService {
       throw new BadRequestException(t("error.sign_in_failed"));
     }
 
-    const verifyPassword = await Bun.password.verify(
-      data.password,
-      account.password,
-    );
+    const verifyPassword = await Bun.password.verify(data.password, account.password);
 
     if (!verifyPassword) {
       throw new BadRequestException(t("error.sign_in_failed"));
@@ -34,7 +30,6 @@ export class AuthService {
   }
 
   async createAccount(data: RequestSignUp) {
-
     const checkEmail = await this.accountRepository.existByEmail(data.email);
     if (checkEmail) {
       throw new BadRequestException(t("error.email_already_exist"));
@@ -55,11 +50,7 @@ export class AuthService {
     await this.accountRepository.save(newAccount);
   }
 
-
-  async generateToken(payload: {
-    id: string;
-    email: string;
-  }): Promise<string> {
+  async generateToken(payload: { id: string; email: string }): Promise<string> {
     const now = Math.floor(Date.now() / 1000);
     const expiresIn = 60 * 60 * 24 * env.JWT_EXPIRES_IN_DAY;
     const jwtPayload: JWTPayload = {

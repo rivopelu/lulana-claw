@@ -10,7 +10,7 @@
         "drizzle-orm": "^0.45.1",
         "hono": "^4.12.2",
         "hono-decorators": "^0.2.0",
-        "i18next": "^25.8.13",
+        "i18next": "^25.10.3",
         "pg": "^8.18.0",
         "picocolors": "^1.1.1",
         "reflect-metadata": "^0.2.2",

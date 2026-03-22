@@ -1,4 +1,4 @@
-import type {Context, Next} from "hono";
+import type { Context, Next } from "hono";
 import logger from "../configs/logger";
 
 const loggerMiddleware = async (c: Context, next: Next) => {
