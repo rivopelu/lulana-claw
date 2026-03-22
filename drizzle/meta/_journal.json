@@ -8,6 +8,13 @@
       "when": 1774168964005,
       "tag": "0000_tough_epoch",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1774170645306,
+      "tag": "0001_remarkable_starfox",
+      "breakpoints": true
     }
   ]
 }
