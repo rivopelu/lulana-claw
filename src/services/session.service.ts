@@ -70,6 +70,32 @@ export default class SessionService {
     return this.sessionRepository.findByClientIdAndChatId(clientId, chatId);
   }
 
+  async findTargetSession(accountId: string, platform: string, sessionName: string) {
+    return this.sessionRepository.findTargetSession(accountId, platform, sessionName);
+  }
+
+  async ensureSession(
+    clientId: string,
+    chatId: number,
+    chatType: ChatType,
+    fallbackName: string,
+  ): Promise<Session> {
+    const existing = await this.getSession(clientId, chatId);
+    if (existing) return existing;
+
+    const newSession = {
+      id: generateId(),
+      client_id: clientId,
+      chat_id: chatId,
+      chat_type: chatType,
+      name: fallbackName,
+      ai_model_id: null,
+      created_by: "system",
+    };
+    await this.sessionRepository.save(newSession);
+    return (await this.sessionRepository.findById(newSession.id))!;
+  }
+
   async getSessionsByClientId(clientId: string): Promise<Session[]> {
     return this.sessionRepository.findAllByClientId(clientId);
   }

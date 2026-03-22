@@ -183,13 +183,25 @@ function BotControls({ clientId, status }: { clientId: string; status: BotStatus
   )
 }
 
-// ─── Create Telegram client ────────────────────────────────────────────────
+// ─── Create client (Telegram / Discord) ───────────────────────────────────
 
 const createSchema = z.object({
   name: z.string().min(1, "Name is required"),
+  type: z.enum(["telegram", "discord"]),
   bot_token: z.string().min(1, "Bot token is required"),
 })
 type CreateForm = z.infer<typeof createSchema>
+
+const botTokenMeta: Record<"telegram" | "discord", { placeholder: string; hint: string }> = {
+  telegram: {
+    placeholder: "123456789:AABBccDDeeFFggHH...",
+    hint: "Get your token from @BotFather on Telegram.",
+  },
+  discord: {
+    placeholder: "MTExxx.xxx.xxx",
+    hint: "Get your token from the Discord Developer Portal → Bot → Reset Token.",
+  },
+}
 
 function CreateClientDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const createClient = useCreateClient()
@@ -198,13 +210,17 @@ function CreateClientDialog({ open, onClose }: { open: boolean; onClose: () => v
     register,
     handleSubmit,
     reset,
+    watch,
+    setValue,
     formState: { errors },
-  } = useForm<CreateForm>({ resolver: zodResolver(createSchema) })
+  } = useForm<CreateForm>({ resolver: zodResolver(createSchema), defaultValues: { type: "telegram" } })
+
+  const selectedType = watch("type")
 
   const onSubmit = async (values: CreateForm) => {
     await createClient.mutateAsync({
       name: values.name,
-      type: "telegram",
+      type: values.type,
       credentials: [{ key: "bot_token", value: values.bot_token }],
     })
     reset()
@@ -216,36 +232,54 @@ function CreateClientDialog({ open, onClose }: { open: boolean; onClose: () => v
     onClose()
   }
 
+  const meta = botTokenMeta[selectedType]
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>New Telegram Client</DialogTitle>
+          <DialogTitle>New Client</DialogTitle>
           <DialogDescription>
-            Connect a Telegram bot by entering its token from{" "}
-            <span className="font-medium text-foreground">@BotFather</span>.
+            Connect a bot by selecting its platform and entering the bot token.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
+            <Label>Platform</Label>
+            <Select
+              value={selectedType}
+              onValueChange={(v) => setValue("type", v as "telegram" | "discord")}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="telegram">Telegram</SelectItem>
+                <SelectItem value="discord">Discord</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
             <Label>Client Name</Label>
-            <Input placeholder="My Telegram Bot" {...register("name")} />
+            <Input
+              placeholder={selectedType === "telegram" ? "My Telegram Bot" : "My Discord Bot"}
+              {...register("name")}
+            />
             {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
           </div>
 
           <div className="flex flex-col gap-1.5">
             <Label>Bot Token</Label>
             <Input
-              placeholder="123456789:AABBccDDeeFFggHH..."
+              placeholder={meta.placeholder}
               {...register("bot_token")}
               autoComplete="off"
             />
             {errors.bot_token && (
               <p className="text-xs text-destructive">{errors.bot_token.message}</p>
             )}
-            <p className="text-xs text-muted-foreground">
-              Get your token from @BotFather on Telegram.
-            </p>
+            <p className="text-xs text-muted-foreground">{meta.hint}</p>
           </div>
 
           {createClient.error && (
@@ -613,7 +647,7 @@ export function ClientsPage() {
           </div>
           <p className="font-medium">No clients yet</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Connect your first Telegram bot to get started
+            Connect your first Telegram or Discord bot to get started
           </p>
           <Button className="mt-4" onClick={() => setCreateOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />
@@ -684,7 +718,7 @@ export function ClientsPage() {
                       <BotStatusBadge status={botStatus} error={botEntry?.error} />
                     </td>
                     <td className="px-4 py-3">
-                      {client.type === "telegram" && (
+                      {(client.type === "telegram" || client.type === "discord") && (
                         <BotControls clientId={client.id} status={botStatus} />
                       )}
                     </td>
