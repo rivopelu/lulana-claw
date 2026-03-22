@@ -7,23 +7,34 @@ import TaskRepository from "../repositories/task.repository";
 import AiService from "../services/ai.service";
 import ContextService from "../services/context.service";
 import SessionService, { type ChatType } from "../services/session.service";
-import TaskService, { parseRemindTime, type TaskType } from "../services/task.service";
+import TaskService, {
+  parseRemindTime,
+  type ResponseTask,
+  type TaskType,
+} from "../services/task.service";
 import VectorService from "../services/vector.service";
 
 // ── Task capability prompt injected into every message system prompt ────────
 // AI appends [TASK_CREATE:{...}] at the end of its reply when it needs to create a task.
 // This works across all models/providers regardless of function-calling support.
 const TASK_CAPABILITY_PROMPT = `
-Kamu memiliki kemampuan menyimpan task, reminder, catatan, meeting, dan deadline.
-Jika pengguna meminta membuat reminder/task/catatan/meeting/deadline, respons seperti biasa DAN tambahkan di baris paling akhir (jangan di tengah teks):
-[TASK_CREATE:{"type":"...","title":"...","description":"...","remind_at_text":"..."}]
+Kamu memiliki kemampuan menyimpan, menyelesaikan, dan menghapus task/reminder/catatan/meeting/deadline.
+
+1. UNTUK MEMBUAT BARU:
+Jika pengguna meminta membuat sesuatu, tambahkan di baris paling akhir:
+[TASK_CREATE:{"type":"task|reminder|notes|meeting|deadline","title":"...","description":"...","remind_at_text":"..."}]
+
+2. UNTUK MENYELESAIKAN (DONE):
+Jika pengguna mengatakan task tertentu sudah selesai, gunakan ID 8-karakter yang ada di daftar jadwal:
+[TASK_DONE:{"id":"8_char_id"}]
+
+3. UNTUK MENGHAPUS/BATAL (DELETE/CANCEL):
+Jika pengguna meminta menghapus atau membatalkan task:
+[TASK_DELETE:{"id":"8_char_id"}]
+
 Aturan:
-- type: "task" | "reminder" | "notes" | "meeting" | "deadline"
-- title: wajib, judul singkat
-- description: opsional, boleh dihilangkan
-- remind_at_text: opsional — format: HH:MM (misal 10:00), DD/MM HH:MM (misal 25/03 14:00), 30m, 2h, 1d
-- JANGAN tampilkan atau jelaskan blok [TASK_CREATE:...] ke pengguna, cukup tambahkan di akhir
-- Hanya tambahkan jika pengguna benar-benar meminta menyimpan/mengingatkan sesuatu`.trim();
+- JANGAN tampilkan atau jelaskan blok [...] ke pengguna, cukup tambahkan di akhir respons.
+- Gunakan ID 8-karakter yang saya berikan di bagian ### CURRENT SCHEDULE/TASKS.`.trim();
 
 export type BotStatus = "starting" | "running" | "stopping" | "stopped" | "error";
 
@@ -623,7 +634,11 @@ Hasilkan dokumen konteks yang akan digunakan sebagai panduan perilaku asisten di
           // 6. Vector Search for RAG (History & Context)
           let ragContext = "";
           if (userEmbedding) {
-            const relHistory = await this.vectorService.searchHistory(session.id, userEmbedding, 5);
+            const relHistory = await this.vectorService.searchHistory(
+              session.id,
+              userEmbedding,
+              10,
+            );
             const relContexts = await this.vectorService.searchContexts(
               aiModel.account_id,
               userEmbedding,
@@ -634,7 +649,10 @@ Hasilkan dokumen konteks yang akan digunakan sebagai panduan perilaku asisten di
               ragContext +=
                 "\n### Relevant Past Conversations:\n" +
                 relHistory
-                  .map((h) => `[${new Date(h.created_at).toLocaleDateString()}]: ${h.content}`)
+                  .map(
+                    (h) =>
+                      `[${new Date(h.created_at).toLocaleDateString()}] ${h.from_name || h.role}: ${h.content}`,
+                  )
                   .join("\n");
             }
             if (relContexts.length > 0) {
@@ -644,10 +662,28 @@ Hasilkan dokumen konteks yang akan digunakan sebagai panduan perilaku asisten di
             }
           }
 
-          // 7. Fetch recent history (standard window)
           const history = await this.sessionService.getHistory(session.id, HISTORY_LIMIT + 1);
 
-          // 8. Build system prompt from contexts + current time + task capability + RAG
+          // 7b. Fetch pending tasks for this session/chat
+          let pendingTasks: ResponseTask[] = [];
+          let pendingTasksContext = "";
+          try {
+            pendingTasks = await this.taskService.getByChatId(clientId, chatId, "pending");
+            if (pendingTasks.length > 0) {
+              pendingTasksContext =
+                "\n### Jadwal/Task Pending saat ini:\n" +
+                pendingTasks
+                  .map(
+                    (t, i) =>
+                      `${i + 1}. [${t.type.toUpperCase()}] ${t.title}${t.remind_at ? ` (Remind: ${new Date(t.remind_at).toLocaleString()})` : ""} - ID: ${t.id.slice(-8)}`,
+                  )
+                  .join("\n");
+            }
+          } catch (e) {
+            logger.warn(`${label} Failed to fetch tasks for context: ${(e as Error).message}`);
+          }
+
+          // 8. Build system prompt from contexts + current time + task capability + RAG + Tasks
           const entityMode = clientRecord?.entity_mode ?? "per_session";
           const baseSystemPrompt = await this.contextService.buildSystemPrompt(
             aiModel.account_id,
@@ -658,7 +694,10 @@ Hasilkan dokumen konteks yang akan digunakan sebagai panduan perilaku asisten di
           const nowStr = new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
           const systemPrompt = [
             baseSystemPrompt,
-            ragContext ? `\n\n[MEMORI RELEVAN]\n${ragContext}` : "",
+            ragContext
+              ? `### LONG-TERM MEMORY (Retrieved from Database):\n${ragContext}\n*Gunakan informasi di atas jika relevan untuk menjawab pertanyaan pengguna.*`
+              : "",
+            pendingTasksContext ? `### CURRENT SCHEDULE/TASKS:\n${pendingTasksContext}` : "",
             `[Waktu sekarang: ${nowStr}]`,
             TASK_CAPABILITY_PROMPT,
           ]
@@ -679,8 +718,8 @@ Hasilkan dokumen konteks yang akan digunakan sebagai panduan perilaku asisten di
             label,
           );
 
-          // 6b. Parse [TASK_CREATE:{...}] markers from the AI response
-          const TASK_MARKER_RE = /\[TASK_CREATE:([\s\S]*?)\]/g;
+          // 6b. Parse markers from AI response
+          const MARKER_RE = /\[TASK_(CREATE|DONE|DELETE):([\s\S]*?)\]/g;
           const TYPE_EMOJI: Record<string, string> = {
             task: "📋",
             reminder: "⏰",
@@ -689,63 +728,84 @@ Hasilkan dokumen konteks yang akan digunakan sebagai panduan perilaku asisten di
             deadline: "🚨",
           };
           const taskConfirmations: string[] = [];
-          let match: RegExpExecArray | null;
+          let markerMatch: RegExpExecArray | null;
 
-          while ((match = TASK_MARKER_RE.exec(rawReply)) !== null) {
+          while ((markerMatch = MARKER_RE.exec(rawReply)) !== null) {
+            const action = markerMatch[1];
             try {
-              const args = JSON.parse(match[1]) as {
-                type?: string;
-                title?: string;
-                description?: string;
-                remind_at_text?: string;
-              };
-              if (!args.title) continue;
+              const args = JSON.parse(markerMatch[2]);
 
-              const taskType: TaskType = (
-                ["task", "reminder", "notes", "meeting", "deadline"] as TaskType[]
-              ).includes(args.type as TaskType)
-                ? (args.type as TaskType)
-                : "task";
+              if (action === "CREATE") {
+                if (!args.title) continue;
+                const taskType: TaskType = (
+                  ["task", "reminder", "notes", "meeting", "deadline"] as TaskType[]
+                ).includes(args.type as TaskType)
+                  ? (args.type as TaskType)
+                  : "task";
 
-              const remindAt = args.remind_at_text
-                ? (parseRemindTime(args.remind_at_text) ?? undefined)
-                : undefined;
+                const remindAt = args.remind_at_text
+                  ? (parseRemindTime(args.remind_at_text) ?? undefined)
+                  : undefined;
 
-              const task = await this.taskService.create(
-                {
-                  client_id: clientId,
-                  chat_id: chatId,
-                  session_id: session?.id,
-                  type: taskType,
-                  title: args.title,
-                  description: args.description,
-                  remind_at: remindAt,
-                },
-                aiModel.account_id,
-              );
+                const task = await this.taskService.create(
+                  {
+                    client_id: clientId,
+                    chat_id: chatId,
+                    session_id: session?.id,
+                    type: taskType,
+                    title: args.title,
+                    description: args.description,
+                    remind_at: remindAt,
+                  },
+                  aiModel.account_id,
+                );
 
-              const emoji = TYPE_EMOJI[taskType] ?? "📋";
-              const remindInfo = remindAt
-                ? ` — ⏰ ${new Date(remindAt).toLocaleString("id-ID")}`
-                : "";
-              taskConfirmations.push(
-                `${emoji} *${args.title}*${remindInfo} \`[${task.id.slice(-8)}]\``,
-              );
-              logger.info(`${label} Task created via AI: ${task.id} type=${taskType}`);
+                const emoji = TYPE_EMOJI[taskType] ?? "📋";
+                const remindInfo = remindAt
+                  ? ` — ⏰ ${new Date(remindAt).toLocaleString("id-ID")}`
+                  : "";
+                taskConfirmations.push(
+                  `${emoji} *${args.title}*${remindInfo} \`[${task.id.slice(-8)}]\``,
+                );
+                logger.info(`${label} Task created via AI: ${task.id}`);
+              } else if (action === "DONE" || action === "DELETE") {
+                const suffix = args.id;
+                if (!suffix) continue;
+
+                // Find the full ID from pendingTasks
+                const target = pendingTasks.find((t) => t.id.endsWith(suffix));
+                if (target) {
+                  if (action === "DONE") {
+                    await this.taskService.markDone(target.id, aiModel.account_id);
+                    taskConfirmations.push(`✅ *${target.title}* ditandai selesai!`);
+                  } else {
+                    await this.taskService.delete(target.id, aiModel.account_id);
+                    taskConfirmations.push(`🗑️ *${target.title}* telah dihapus.`);
+                  }
+                  logger.info(`${label} Task ${action} via AI: ${target.id}`);
+                }
+              }
             } catch (tcErr) {
-              logger.error(`${label} task marker parse error: ${(tcErr as Error).message}`);
+              logger.error(`${label} marker parse error: ${(tcErr as Error).message}`);
             }
           }
 
-          // 7. Clean marker from reply text + append confirmations
-          let reply = rawReply.replace(/\[TASK_CREATE:[\s\S]*?\]/g, "").trim();
+          // 7. Clean all markers from reply text + append confirmations
+          let reply = rawReply.replace(/\[TASK_(CREATE|DONE|DELETE):[\s\S]*?\]/g, "").trim();
           if (taskConfirmations.length > 0) {
-            const confirmBlock = `✅ Tersimpan:\n${taskConfirmations.join("\n")}`;
+            const confirmBlock = `✅ Berhasil:\n${taskConfirmations.join("\n")}`;
             reply = reply ? `${reply}\n\n${confirmBlock}` : confirmBlock;
           }
           if (!reply) reply = "Sorry, I could not generate a response.";
 
-          await ctx.reply(reply, { parse_mode: "Markdown" });
+          try {
+            await ctx.reply(reply, { parse_mode: "Markdown" });
+          } catch (err) {
+            logger.warn(
+              `${label} Markdown reply failed, falling back to plain text: ${(err as Error).message}`,
+            );
+            await ctx.reply(reply); // Plain text fallback
+          }
 
           // 10. Generate embedding for assistant reply
           let replyEmbedding: number[] | undefined;

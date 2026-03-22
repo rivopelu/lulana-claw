@@ -76,31 +76,27 @@ export default class VectorService {
       return await ContextModel.aggregate(pipeline).exec();
     } catch (err) {
       // 2. FALLBACK: Local similarity search
-      console.warn(
-        "Atlas Vector Search failed, falling back to local search:",
-        (err as Error).message,
-      );
+      const errMsg = (err as Error).message;
+      if (!errMsg.includes("only allowed on MongoDB Atlas")) {
+        console.warn("[VectorService] Atlas Search Error:", errMsg);
+      }
 
       const all = await ContextModel.find({
         ...filter,
         embedding: { $exists: true, $ne: null },
       }).lean();
 
-      console.info(`[VectorService] Local contexts fallback: scanning ${all.length} documents...`);
-
       const scored = all
         .map((doc) => ({
           ...(doc as any),
           score: doc.embedding ? this.cosineSimilarity(queryEmbedding, doc.embedding) : 0,
         }))
-        .filter((doc) => doc.score > 0.5) // Lowered threshold to 0.5
+        .filter((doc) => doc.score > 0.5)
         .sort((a, b) => b.score - a.score)
         .slice(0, limit);
 
       if (scored.length > 0) {
-        console.info(
-          `[VectorService] Found ${scored.length} related contexts. Top score: ${scored[0].score.toFixed(4)}`,
-        );
+        console.info(`[VectorService] Found ${scored.length} related contexts locally.`);
       }
 
       return scored as unknown as IContext[];
@@ -135,41 +131,38 @@ export default class VectorService {
             content: 1,
             from_name: 1,
             created_at: 1,
+            embedding: 1,
           },
         },
       ];
       return await SessionMessageModel.aggregate(pipeline).exec();
     } catch (err) {
-      // 2. FALLBACK: Local similarity search on recent session history
-      console.warn(
-        "Atlas Vector Search on history failed, falling back to local:",
-        (err as Error).message,
-      );
+      // 2. FALLBACK: Local similarity search
+      const errMsg = (err as Error).message;
+      if (!errMsg.includes("only allowed on MongoDB Atlas")) {
+        console.warn("[VectorService] Atlas History Search Error:", errMsg);
+      }
 
       const recentMessages = await SessionMessageModel.find({
         session_id: sessionId,
         embedding: { $exists: true, $ne: null },
       })
         .sort({ created_at: -1 })
-        .limit(200) // Increased window for local search
+        .limit(200)
         .lean();
-
-      console.info(
-        `[VectorService] Local history fallback: scanning ${recentMessages.length} messages for session ${sessionId}...`,
-      );
 
       const scored = recentMessages
         .map((msg) => ({
           ...(msg as any),
           score: msg.embedding ? this.cosineSimilarity(queryEmbedding, msg.embedding) : 0,
         }))
-        .filter((msg) => msg.score > 0.5) // Lowered threshold to 0.5
+        .filter((msg) => msg.score > 0.5)
         .sort((a, b) => b.score - a.score)
         .slice(0, limit);
 
       if (scored.length > 0) {
         console.info(
-          `[VectorService] Found ${scored.length} related messages. Top score: ${scored[0].score.toFixed(4)}`,
+          `[VectorService] Local memory: ${scored.length} items found (Top: ${scored[0].score.toFixed(3)})`,
         );
       }
 
