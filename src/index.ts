@@ -6,6 +6,7 @@ import logger from "./configs/logger";
 import { ErrorHandler } from "./libs/error-handler";
 import InitMiddlewares from "./middleware/init-middleware";
 import { botManager } from "./bots/bot-manager";
+import { discordManager } from "./bots/discord-manager";
 import { connectMongo } from "./database/mongo";
 import ClientRepository from "./repositories/client.repository";
 import ClientCredentialRepository from "./repositories/client-credential.repository";
@@ -31,24 +32,45 @@ async function startActiveBots(): Promise<void> {
   const clientRepo = new ClientRepository();
   const credRepo = new ClientCredentialRepository();
 
-  const clients = await clientRepo.findAllActiveByType("telegram");
-  if (clients.length === 0) return;
+  const [telegramClients, discordClients] = await Promise.all([
+    clientRepo.findAllActiveByType("telegram"),
+    clientRepo.findAllActiveByType("discord"),
+  ]);
 
-  logger.info(`[BotManager] Auto-starting ${clients.length} Telegram bot(s)...`);
+  const allClients = [
+    ...telegramClients.map((c) => ({ ...c, platform: "telegram" as const })),
+    ...discordClients.map((c) => ({ ...c, platform: "discord" as const })),
+  ];
+
+  if (allClients.length === 0) return;
+
+  logger.info(
+    `[BotManager] Auto-starting ${telegramClients.length} Telegram + ${discordClients.length} Discord bot(s)...`,
+  );
 
   await Promise.allSettled(
-    clients.map(async (client) => {
+    allClients.map(async (client) => {
       const tokenCred = await credRepo.findByClientIdAndKey(client.id, "bot_token");
       if (!tokenCred) {
-        logger.warn(`[BotManager] Skipping client ${client.id} — no bot_token credential`);
+        logger.warn(`[${client.platform}] Skipping client "${client.name}" — no bot_token credential`);
         return;
       }
-      await botManager.start(client.id, tokenCred.value);
-      const { status, error } = botManager.getStatus(client.id);
-      if (status === "running") {
-        logger.info(`[BotManager] ✅ Bot "${client.name}" started`);
+      if (client.platform === "telegram") {
+        await botManager.start(client.id, tokenCred.value);
+        const { status, error } = botManager.getStatus(client.id);
+        if (status === "running") {
+          logger.info(`[Telegram] ✅ Bot "${client.name}" started`);
+        } else {
+          logger.warn(`[Telegram] ⚠️  Bot "${client.name}" failed: ${error}`);
+        }
       } else {
-        logger.warn(`[BotManager] ⚠️  Bot "${client.name}" failed: ${error}`);
+        await discordManager.start(client.id, tokenCred.value);
+        const { status, error } = discordManager.getStatus(client.id);
+        if (status === "running" || status === "starting") {
+          logger.info(`[Discord] ✅ Bot "${client.name}" started`);
+        } else {
+          logger.warn(`[Discord] ⚠️  Bot "${client.name}" failed: ${error}`);
+        }
       }
     }),
   );

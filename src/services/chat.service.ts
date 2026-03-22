@@ -8,30 +8,39 @@ import VectorService from "./vector.service";
 
 const HISTORY_LIMIT = 10;
 const TASK_CAPABILITY_PROMPT = `
-Kamu memiliki kemampuan menyimpan, menyelesaikan, dan menghapus task/reminder/catatan/meeting/deadline, serta mengirim pesan ke platform lain.
+## SISTEM AKSI — WAJIB DIEKSEKUSI LANGSUNG
 
-1. UNTUK MEMBUAT BARU:
-Jika pengguna meminta membuat sesuatu, tambahkan di baris paling akhir:
-[TASK_CREATE:{"type":"task|reminder|notes|meeting|deadline","title":"...","description":"...","remind_at_text":"..."}]
+Kamu memiliki kemampuan nyata untuk menyimpan task, reminder, catatan, meeting, deadline, dan mengirim pesan ke platform lain. Ini BUKAN sekadar obrolan — ini adalah aksi nyata yang harus kamu lakukan dengan marker di bawah.
 
-2. UNTUK MENYELESAIKAN (DONE):
-Jika pengguna mengatakan task tertentu sudah selesai, gunakan ID 8-karakter yang ada di daftar jadwal:
+### ATURAN PALING PENTING:
+- Jika ada kata "catet", "catat", "ingatkan", "remind", "buat task", "simpan", "jadwalkan", "tolong ingat", "besok", "nanti", "jam sekian", atau perintah serupa → WAJIB langsung buat marker yang sesuai di akhir respons.
+- JANGAN hanya bilang "siap dicatet!" atau "oke diingatkan!" tanpa marker — itu tidak akan menyimpan apa-apa ke sistem.
+- JANGAN tanya konfirmasi, JANGAN tanya "ada yang mau ditambah?", JANGAN minta detail tambahan sebelum membuat marker. Buat dulu, bisa diubah nanti.
+- Semua marker TIDAK TERLIHAT oleh pengguna — tambahkan diam-diam di baris paling akhir.
+
+---
+
+1. MEMBUAT TASK/CATATAN/REMINDER (WAJIB jika ada perintah mencatat atau mengingatkan):
+[TASK_CREATE:{"type":"task|reminder|notes|meeting|deadline","title":"judul singkat","description":"detail opsional","remind_at_text":"waktu jika ada, contoh: besok malam, 30m, 2h, 19:00, 24/03 20:00"}]
+
+Panduan type:
+- "notes" → untuk catatan/info yang perlu disimpan ("catet bahwa...", "simpan info ini")
+- "reminder" → untuk pengingat di waktu tertentu ("ingatkan jam...", "remind besok...")
+- "task" → untuk pekerjaan/to-do ("buat task untuk...", "perlu dikerjakan...")
+- "meeting" → untuk jadwal pertemuan
+- "deadline" → untuk batas waktu
+
+2. MENYELESAIKAN TASK (gunakan ID 8-karakter dari daftar task):
 [TASK_DONE:{"id":"8_char_id"}]
 
-3. UNTUK MENGHAPUS/BATAL (DELETE/CANCEL):
-Jika pengguna meminta menghapus atau membatalkan task:
+3. MENGHAPUS/MEMBATALKAN TASK:
 [TASK_DELETE:{"id":"8_char_id"}]
 
-4. UNTUK MENGIRIM PESAN LINTAS PLATFORM:
-Jika pengguna meminta kamu untuk mengirim pesan ke platform lain (discord, telegram) atau ke channel/grup tertentu, kamu HARUS LANGSUNG mengirimnya tanpa meminta konfirmasi, tanpa menampilkan preview, tanpa bertanya "gimana?" atau "langsung kirim?".
-Tambahkan marker berikut di baris paling akhir respons:
-[SEND_MESSAGE:{"platform":"discord|telegram","target_session_name":"nama channel/sesi tujuan","text":"isi pesan yang akan dikirim"}]
-Isi "text" dengan pesan yang sudah siap dikirim, bukan preview atau draf. Tulis pesan yang natural sesuai konteks permintaan pengguna.
+4. MENGIRIM PESAN KE PLATFORM LAIN (LANGSUNG, tanpa konfirmasi/preview):
+[SEND_MESSAGE:{"platform":"discord|telegram","target_session_name":"nama channel/sesi tujuan","text":"isi pesan siap kirim"}]
 
-Aturan umum:
-- JANGAN tampilkan, jelaskan, atau tunjukkan blok [...] ke pengguna — cukup tambahkan di akhir respons secara diam-diam.
-- Untuk SEND_MESSAGE: JANGAN tanya konfirmasi, JANGAN tampilkan preview isi pesan, LANGSUNG buat markernya.
-- Gunakan ID 8-karakter yang ada di bagian ### CURRENT SCHEDULE/TASKS untuk TASK_DONE dan TASK_DELETE.`.trim();
+---
+Gunakan ID 8-karakter dari bagian ### CURRENT SCHEDULE/TASKS untuk TASK_DONE dan TASK_DELETE.`.trim();
 
 export interface ProcessMessageParams {
   clientId: string;
@@ -182,7 +191,7 @@ export default class ChatService {
       const action = markerMatch[1];
       try {
         const args = JSON.parse(markerMatch[2]);
-        if (action === "CREATE") {
+        if (action === "TASK_CREATE") {
           if (args.title) {
             const task = await this.taskService.create(
               {
@@ -204,11 +213,11 @@ export default class ChatService {
               ] || "📋";
             taskConfirmations.push(`${emo} *${task.title}* [${task.id.slice(-8)}]`);
           }
-        } else if (action === "DONE" || action === "DELETE") {
+        } else if (action === "TASK_DONE" || action === "TASK_DELETE") {
           const suffix = args.id;
           const target = pendingTasks.find((t) => t.id.endsWith(suffix));
           if (target) {
-            if (action === "DONE") {
+            if (action === "TASK_DONE") {
               await this.taskService.markDone(target.id, aiModel.account_id);
               taskConfirmations.push(`✅ *${target.title}* selesai!`);
             } else {
