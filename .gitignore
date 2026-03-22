@@ -1,10 +1,30 @@
-# deps
+# Dependencies
 node_modules/
-.env
+client/node_modules/
 
-client/dist
-client/node_modules
-dist
-.env*
+# Build output
+dist/
+client/dist/
+
+# Environment — never commit real credentials
+.env
+.env.local
+.env.*.local
 !.env.example
-/contexts
+
+# Runtime context cache (auto-generated from DB on startup, never commit)
+/contexts/
+
+# IDE & editor
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# TypeScript cache
+*.tsbuildinfo
