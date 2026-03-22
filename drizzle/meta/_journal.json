@@ -22,6 +22,20 @@
       "when": 1774171531553,
       "tag": "0002_premium_lord_hawal",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1774176402032,
+      "tag": "0003_bright_toad",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1774176899445,
+      "tag": "0004_cold_klaw",
+      "breakpoints": true
     }
   ]
 }

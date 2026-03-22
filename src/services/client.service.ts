@@ -45,6 +45,7 @@ export default class ClientService {
       id: c.id,
       name: c.name,
       type: c.type,
+      ai_model_id: c.ai_model_id ?? null,
       active: c.active,
       created_date: c.created_date,
     }));
@@ -80,6 +81,7 @@ export default class ClientService {
 
     await this.clientRepository.update(id, {
       name: body.name,
+      ...(body.ai_model_id !== undefined && { ai_model_id: body.ai_model_id }),
       updated_by: accountId,
       updated_date: Date.now(),
     });

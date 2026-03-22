@@ -1,0 +1,410 @@
+import { useState } from "react"
+import { useForm, Controller } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { z } from "zod"
+import { Plus, Trash2, Pencil, Brain, Loader2, Eye, EyeOff } from "lucide-react"
+import { PageHeader } from "@/components/layout/PageHeader"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  useAiModels,
+  useCreateAiModel,
+  useUpdateAiModel,
+  useDeleteAiModel,
+  useMasterAiModels,
+} from "@/hooks/useAiModels"
+import type { AiModel } from "@/types/ai-model"
+
+// ─── Create / Edit dialog ──────────────────────────────────────────────────
+
+const createSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  model_id: z.string().min(1, "Model is required"),
+  api_key: z.string().min(10, "API key is required"),
+})
+type CreateForm = z.infer<typeof createSchema>
+
+const editSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  model_id: z.string().min(1, "Model is required"),
+  api_key: z.string().optional(),
+})
+type EditForm = z.infer<typeof editSchema>
+
+function CreateDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const create = useCreateAiModel()
+  const { data: masterModels = [] } = useMasterAiModels()
+  const [showKey, setShowKey] = useState(false)
+
+  const {
+    register,
+    handleSubmit,
+    control,
+    reset,
+    formState: { errors },
+  } = useForm<CreateForm>({ resolver: zodResolver(createSchema) })
+
+  const onSubmit = async (values: CreateForm) => {
+    await create.mutateAsync({ ...values, provider: "openai" })
+    reset()
+    onClose()
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && (reset(), onClose())}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add AI Model</DialogTitle>
+          <DialogDescription>Configure an OpenAI model with its API key.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <Label>Label</Label>
+            <Input placeholder="e.g. Production GPT-4o" {...register("name")} />
+            {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>Model</Label>
+            <Controller
+              control={control}
+              name="model_id"
+              render={({ field }) => (
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {masterModels.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        <span className="font-medium">{m.name}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          {(m.context_window / 1000).toFixed(0)}k ctx
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            {errors.model_id && (
+              <p className="text-xs text-destructive">{errors.model_id.message}</p>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>OpenAI API Key</Label>
+            <div className="relative">
+              <Input
+                type={showKey ? "text" : "password"}
+                placeholder="sk-..."
+                {...register("api_key")}
+                className="pr-10"
+                autoComplete="off"
+              />
+              <button
+                type="button"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+                onClick={() => setShowKey((v) => !v)}
+              >
+                {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            {errors.api_key && (
+              <p className="text-xs text-destructive">{errors.api_key.message}</p>
+            )}
+          </div>
+
+          {create.error && (
+            <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {(create.error as Error).message}
+            </p>
+          )}
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => (reset(), onClose())}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={create.isPending}>
+              {create.isPending ? "Adding..." : "Add Model"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function EditDialog({
+  model,
+  open,
+  onClose,
+}: {
+  model: AiModel
+  open: boolean
+  onClose: () => void
+}) {
+  const update = useUpdateAiModel()
+  const { data: masterModels = [] } = useMasterAiModels()
+  const [showKey, setShowKey] = useState(false)
+
+  const {
+    register,
+    handleSubmit,
+    control,
+    reset,
+    formState: { errors },
+  } = useForm<EditForm>({
+    resolver: zodResolver(editSchema),
+    defaultValues: { name: model.name, model_id: model.model_id },
+  })
+
+  const onSubmit = async (values: EditForm) => {
+    await update.mutateAsync({
+      id: model.id,
+      body: {
+        name: values.name,
+        model_id: values.model_id,
+        ...(values.api_key ? { api_key: values.api_key } : {}),
+      },
+    })
+    reset()
+    onClose()
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && (reset(), onClose())}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit AI Model</DialogTitle>
+          <DialogDescription>
+            Leave API key blank to keep the current key.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <Label>Label</Label>
+            <Input {...register("name")} />
+            {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>Model</Label>
+            <Controller
+              control={control}
+              name="model_id"
+              render={({ field }) => (
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {masterModels.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        <span className="font-medium">{m.name}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          {(m.context_window / 1000).toFixed(0)}k ctx
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>
+              New API Key{" "}
+              <span className="text-xs text-muted-foreground font-normal">
+                (current: {model.api_key_hint})
+              </span>
+            </Label>
+            <div className="relative">
+              <Input
+                type={showKey ? "text" : "password"}
+                placeholder="Leave blank to keep current"
+                {...register("api_key")}
+                className="pr-10"
+                autoComplete="off"
+              />
+              <button
+                type="button"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+                onClick={() => setShowKey((v) => !v)}
+              >
+                {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => (reset(), onClose())}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={update.isPending}>
+              {update.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ─── Main page ─────────────────────────────────────────────────────────────
+
+const PROVIDER_LABEL: Record<string, string> = { openai: "OpenAI" }
+
+export function AiModelsPage() {
+  const { data: models = [], isLoading } = useAiModels()
+  const deleteModel = useDeleteAiModel()
+
+  const [createOpen, setCreateOpen] = useState(false)
+  const [editModel, setEditModel] = useState<AiModel | null>(null)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
+
+  return (
+    <div>
+      <PageHeader
+        title="AI Models"
+        description="Configure AI model credentials for your bots"
+        action={
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add Model
+          </Button>
+        }
+      />
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : models.length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
+          <div className="mb-3 rounded-full bg-muted p-3">
+            <Brain className="h-6 w-6 text-muted-foreground" />
+          </div>
+          <p className="font-medium">No AI models configured</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Add an OpenAI model with its API key to get started
+          </p>
+          <Button className="mt-4" onClick={() => setCreateOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add Model
+          </Button>
+        </div>
+      ) : (
+        <div className="rounded-lg border bg-card overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/50">
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Label</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Model</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Provider</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">API Key</th>
+                <th className="px-4 py-3 text-right font-medium text-muted-foreground">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {models.map((model) => (
+                <tr key={model.id} className="hover:bg-muted/30 transition-colors">
+                  <td className="px-4 py-3 font-medium">{model.name}</td>
+                  <td className="px-4 py-3">
+                    <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{model.model_id}</code>
+                  </td>
+                  <td className="px-4 py-3">
+                    <Badge variant="secondary">{PROVIDER_LABEL[model.provider] ?? model.provider}</Badge>
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
+                    {model.api_key_hint}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setEditModel(model)}
+                      >
+                        <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                        Edit
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => setDeleteId(model.id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <CreateDialog open={createOpen} onClose={() => setCreateOpen(false)} />
+
+      {editModel && (
+        <EditDialog model={editModel} open={!!editModel} onClose={() => setEditModel(null)} />
+      )}
+
+      <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete AI Model</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove the model configuration. Clients using this model will lose their AI
+              connection until reassigned.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async () => {
+                if (deleteId) {
+                  await deleteModel.mutateAsync(deleteId)
+                  setDeleteId(null)
+                }
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  )
+}

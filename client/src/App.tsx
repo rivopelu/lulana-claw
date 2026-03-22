@@ -5,6 +5,7 @@ import { SetupPage } from "@/pages/auth/SetupPage"
 import { LoginPage } from "@/pages/auth/LoginPage"
 import { DashboardPage } from "@/pages/dashboard/DashboardPage"
 import { ClientsPage } from "@/pages/clients/ClientsPage"
+import { AiModelsPage } from "@/pages/ai-models/AiModelsPage"
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/clients" element={<ClientsPage />} />
+          <Route path="/ai-models" element={<AiModelsPage />} />
         </Route>
       </Route>
 

@@ -2,7 +2,47 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api"
 import { API } from "@/lib/constants"
 import type { BaseResponse } from "@/types/api"
-import type { Client, ClientDetail, CreateClientRequest } from "@/types/client"
+import type { BotStatus, Client, ClientDetail, CreateClientRequest } from "@/types/client"
+
+// ─── Bot status ────────────────────────────────────────────────────────────
+
+export type BotStatuses = Record<string, { status: BotStatus; error?: string }>
+
+export function useBotStatuses() {
+  return useQuery({
+    queryKey: ["bot-statuses"],
+    queryFn: () => apiGet<BaseResponse<BotStatuses>>(API.BOT.STATUSES),
+    select: (res) => res.response_data ?? {},
+    refetchInterval: 3_000,
+  })
+}
+
+export function useStartBot() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (clientId: string) =>
+      apiPost<BaseResponse<{ status: BotStatus }>>(API.BOT.START(clientId), {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["bot-statuses"] }),
+  })
+}
+
+export function useStopBot() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (clientId: string) =>
+      apiPost<BaseResponse<{ status: BotStatus }>>(API.BOT.STOP(clientId), {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["bot-statuses"] }),
+  })
+}
+
+export function useRestartBot() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (clientId: string) =>
+      apiPost<BaseResponse<{ status: BotStatus }>>(API.BOT.RESTART(clientId), {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["bot-statuses"] }),
+  })
+}
 
 export function useClients() {
   return useQuery({

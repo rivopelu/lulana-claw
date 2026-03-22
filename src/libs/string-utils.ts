@@ -1,7 +1,7 @@
-import { randomUUIDv7 } from "bun";
+import { randomUUID } from "crypto";
 
 export function generateId(): string {
-  return randomUUIDv7().split("-").join("").toUpperCase();
+  return randomUUID().split("-").join("").toUpperCase();
 }
 
 export function generateProfilePicture(name: string): string {

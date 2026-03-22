@@ -2,7 +2,7 @@ import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
-import { Plus, Trash2, KeyRound, ChevronRight, X } from "lucide-react"
+import { Plus, Trash2, KeyRound, ChevronRight, Play, Square, RotateCcw, Loader2, Brain } from "lucide-react"
 import { PageHeader } from "@/components/layout/PageHeader"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog"
 import {
   AlertDialog,
@@ -26,67 +27,191 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import {
+  useClients,
+  useClient,
+  useCreateClient,
+  useUpdateClient,
+  useDeleteClient,
+  useAddCredential,
+  useUpdateCredential,
+  useDeleteCredential,
+  useBotStatuses,
+  useStartBot,
+  useStopBot,
+  useRestartBot,
+} from "@/hooks/useClients"
+import { useAiModels } from "@/hooks/useAiModels"
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  useClients,
-  useClient,
-  useCreateClient,
-  useDeleteClient,
-  useAddCredential,
-  useUpdateCredential,
-  useDeleteCredential,
-} from "@/hooks/useClients"
-import type { ClientType } from "@/types/client"
+import type { BotStatus, ClientType } from "@/types/client"
 
-// ─── Create client form ────────────────────────────────────────────────────
+// ─── Bot status indicator ──────────────────────────────────────────────────
+
+const statusDot: Record<BotStatus, string> = {
+  running: "bg-green-500",
+  starting: "bg-yellow-400 animate-pulse",
+  stopping: "bg-yellow-400 animate-pulse",
+  stopped: "bg-slate-300",
+  error: "bg-red-500",
+}
+
+const statusLabel: Record<BotStatus, string> = {
+  running: "Running",
+  starting: "Starting…",
+  stopping: "Stopping…",
+  stopped: "Stopped",
+  error: "Error",
+}
+
+function BotStatusBadge({ status, error }: { status: BotStatus; error?: string }) {
+  const label = statusLabel[status]
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className={`h-2 w-2 rounded-full flex-shrink-0 ${statusDot[status]}`} />
+            {label}
+          </span>
+        </TooltipTrigger>
+        {error && (
+          <TooltipContent side="top" className="max-w-xs text-xs">
+            {error}
+          </TooltipContent>
+        )}
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
+// ─── Bot control buttons ───────────────────────────────────────────────────
+
+function BotControls({ clientId, status }: { clientId: string; status: BotStatus }) {
+  const start = useStartBot()
+  const stop = useStopBot()
+  const restart = useRestartBot()
+
+  const busy =
+    status === "starting" ||
+    status === "stopping" ||
+    start.isPending ||
+    stop.isPending ||
+    restart.isPending
+
+  if (status === "running") {
+    return (
+      <div className="flex items-center gap-1">
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-yellow-600"
+                disabled={busy}
+                onClick={() => restart.mutate(clientId)}
+              >
+                {restart.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RotateCcw className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Restart</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-red-600"
+                disabled={busy}
+                onClick={() => stop.mutate(clientId)}
+              >
+                {stop.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Square className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Stop</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
+    )
+  }
+
+  // stopped | error
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-muted-foreground hover:text-green-600"
+            disabled={busy}
+            onClick={() => start.mutate(clientId)}
+          >
+            {busy ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Play className="h-3.5 w-3.5" />
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">Start</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
+// ─── Create Telegram client ────────────────────────────────────────────────
 
 const createSchema = z.object({
   name: z.string().min(1, "Name is required"),
-  type: z.enum(["telegram", "discord", "whatsapp", "http"] as const),
+  bot_token: z.string().min(1, "Bot token is required"),
 })
 type CreateForm = z.infer<typeof createSchema>
 
 function CreateClientDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const createClient = useCreateClient()
-  const [credentials, setCredentials] = useState<{ key: string; value: string }[]>([])
-  const [credKey, setCredKey] = useState("")
-  const [credValue, setCredValue] = useState("")
 
   const {
     register,
     handleSubmit,
-    setValue,
-    watch,
     reset,
     formState: { errors },
   } = useForm<CreateForm>({ resolver: zodResolver(createSchema) })
 
-  const selectedType = watch("type")
-
-  const addCred = () => {
-    if (!credKey.trim() || !credValue.trim()) return
-    setCredentials((prev) => [...prev, { key: credKey.trim(), value: credValue.trim() }])
-    setCredKey("")
-    setCredValue("")
-  }
-
-  const removeCred = (idx: number) => setCredentials((prev) => prev.filter((_, i) => i !== idx))
-
   const onSubmit = async (values: CreateForm) => {
-    await createClient.mutateAsync({ ...values, credentials })
+    await createClient.mutateAsync({
+      name: values.name,
+      type: "telegram",
+      credentials: [{ key: "bot_token", value: values.bot_token }],
+    })
     reset()
-    setCredentials([])
     onClose()
   }
 
   const handleClose = () => {
     reset()
-    setCredentials([])
     onClose()
   }
 
@@ -94,72 +219,36 @@ function CreateClientDialog({ open, onClose }: { open: boolean; onClose: () => v
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>New Client</DialogTitle>
+          <DialogTitle>New Telegram Client</DialogTitle>
+          <DialogDescription>
+            Connect a Telegram bot by entering its token from{" "}
+            <span className="font-medium text-foreground">@BotFather</span>.
+          </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <Label>Name</Label>
+            <Label>Client Name</Label>
             <Input placeholder="My Telegram Bot" {...register("name")} />
             {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label>Type</Label>
-            <Select onValueChange={(v) => setValue("type", v as ClientType)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="telegram">Telegram</SelectItem>
-                <SelectItem value="discord">Discord</SelectItem>
-                <SelectItem value="whatsapp">WhatsApp</SelectItem>
-                <SelectItem value="http">HTTP</SelectItem>
-              </SelectContent>
-            </Select>
-            {errors.type && <p className="text-xs text-destructive">{errors.type.message}</p>}
+            <Label>Bot Token</Label>
+            <Input
+              placeholder="123456789:AABBccDDeeFFggHH..."
+              {...register("bot_token")}
+              autoComplete="off"
+            />
+            {errors.bot_token && (
+              <p className="text-xs text-destructive">{errors.bot_token.message}</p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Get your token from @BotFather on Telegram.
+            </p>
           </div>
 
-          {/* Credentials */}
-          {selectedType && (
-            <div className="flex flex-col gap-2">
-              <Label>Credentials</Label>
-              {credentials.length > 0 && (
-                <ul className="rounded-md border divide-y text-sm">
-                  {credentials.map((c, i) => (
-                    <li key={i} className="flex items-center justify-between px-3 py-2">
-                      <span className="font-mono text-xs">
-                        <span className="font-semibold">{c.key}</span>:{" "}
-                        <span className="text-muted-foreground">{c.value}</span>
-                      </span>
-                      <button type="button" onClick={() => removeCred(i)}>
-                        <X className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <div className="flex gap-2">
-                <Input
-                  placeholder="key"
-                  value={credKey}
-                  onChange={(e) => setCredKey(e.target.value)}
-                  className="flex-1"
-                />
-                <Input
-                  placeholder="value"
-                  value={credValue}
-                  onChange={(e) => setCredValue(e.target.value)}
-                  className="flex-1"
-                />
-                <Button type="button" variant="outline" size="icon" onClick={addCred}>
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          )}
-
           {createClient.error && (
-            <p className="text-sm text-destructive">
+            <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {(createClient.error as Error).message || "Failed to create client"}
             </p>
           )}
@@ -178,7 +267,9 @@ function CreateClientDialog({ open, onClose }: { open: boolean; onClose: () => v
   )
 }
 
-// ─── Credential management dialog ─────────────────────────────────────────
+// ─── Credentials dialog ────────────────────────────────────────────────────
+
+const HIDDEN_KEYS = new Set(["bot_token"])
 
 function CredentialsDialog({
   clientId,
@@ -216,20 +307,23 @@ function CredentialsDialog({
     await deleteCred.mutateAsync({ clientId, credId })
   }
 
+  const credentials = client?.credentials ?? []
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Credentials — {clientName}</DialogTitle>
+          <DialogDescription>Manage credential key-value pairs for this client.</DialogDescription>
         </DialogHeader>
 
         {isLoading ? (
           <p className="py-4 text-sm text-muted-foreground text-center">Loading...</p>
         ) : (
           <div className="flex flex-col gap-3">
-            {client?.credentials && client.credentials.length > 0 ? (
+            {credentials.length > 0 ? (
               <ul className="rounded-md border divide-y text-sm">
-                {client.credentials.map((c) => (
+                {credentials.map((c) => (
                   <li key={c.id} className="flex items-center gap-2 px-3 py-2">
                     <span className="w-28 flex-shrink-0 font-mono text-xs font-semibold truncate">
                       {c.key}
@@ -261,7 +355,7 @@ function CredentialsDialog({
                     ) : (
                       <>
                         <span className="flex-1 truncate text-xs text-muted-foreground font-mono">
-                          {c.value}
+                          {HIDDEN_KEYS.has(c.key) ? "••••••••••••••••" : c.value}
                         </span>
                         <button
                           className="text-xs text-muted-foreground hover:text-foreground"
@@ -272,16 +366,18 @@ function CredentialsDialog({
                         >
                           Edit
                         </button>
-                        <button onClick={() => handleDelete(c.id)}>
-                          <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-                        </button>
+                        {!HIDDEN_KEYS.has(c.key) && (
+                          <button onClick={() => handleDelete(c.id)}>
+                            <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+                          </button>
+                        )}
                       </>
                     )}
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-muted-foreground text-center py-2">No credentials yet</p>
+              <p className="text-sm text-muted-foreground text-center py-2">No credentials</p>
             )}
 
             <div className="flex gap-2">
@@ -297,7 +393,12 @@ function CredentialsDialog({
                 onChange={(e) => setValue(e.target.value)}
                 className="flex-1"
               />
-              <Button variant="outline" size="icon" onClick={handleAdd} disabled={addCred.isPending}>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleAdd}
+                disabled={addCred.isPending}
+              >
                 <Plus className="h-4 w-4" />
               </Button>
             </div>
@@ -333,17 +434,99 @@ function TypeBadge({ type }: { type: ClientType }) {
   )
 }
 
+// ─── Assign AI model dialog ────────────────────────────────────────────────
+
+function AssignModelDialog({
+  clientId,
+  clientName,
+  currentModelId,
+  open,
+  onClose,
+}: {
+  clientId: string
+  clientName: string
+  currentModelId: string | null
+  open: boolean
+  onClose: () => void
+}) {
+  const { data: models = [] } = useAiModels()
+  const updateClient = useUpdateClient()
+  const [selected, setSelected] = useState<string>(currentModelId ?? "")
+
+  const handleSave = async () => {
+    await updateClient.mutateAsync({
+      id: clientId,
+      body: { name: clientName, ai_model_id: selected || null },
+    })
+    onClose()
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Assign AI Model</DialogTitle>
+          <DialogDescription>
+            Select which AI model <span className="font-medium text-foreground">{clientName}</span>{" "}
+            will use.
+          </DialogDescription>
+        </DialogHeader>
+
+        {models.length === 0 ? (
+          <p className="py-2 text-sm text-muted-foreground">
+            No AI models configured yet. Add one in the{" "}
+            <span className="font-medium text-foreground">AI Models</span> page first.
+          </p>
+        ) : (
+          <Select value={selected} onValueChange={setSelected}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select a model" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">
+                <span className="text-muted-foreground">None</span>
+              </SelectItem>
+              {models.map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  <span className="font-medium">{m.name}</span>
+                  <span className="ml-2 text-xs text-muted-foreground">({m.model_id})</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={handleSave} disabled={updateClient.isPending}>
+            {updateClient.isPending ? "Saving..." : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ─── Main page ─────────────────────────────────────────────────────────────
 
 export function ClientsPage() {
   const { data: clients = [], isLoading } = useClients()
+  const { data: botStatuses = {} } = useBotStatuses()
   const deleteClient = useDeleteClient()
+
+  const { data: aiModels = [] } = useAiModels()
+  const aiModelMap = Object.fromEntries(aiModels.map((m) => [m.id, m]))
 
   const [createOpen, setCreateOpen] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
-  const [credentialsClient, setCredentialsClient] = useState<{ id: string; name: string } | null>(
-    null,
-  )
+  const [credentialsClient, setCredentialsClient] = useState<{ id: string; name: string } | null>(null)
+  const [assignModelClient, setAssignModelClient] = useState<{
+    id: string
+    name: string
+    ai_model_id: string | null
+  } | null>(null)
 
   return (
     <div>
@@ -360,7 +543,7 @@ export function ClientsPage() {
 
       {isLoading ? (
         <div className="flex items-center justify-center py-20">
-          <p className="text-sm text-muted-foreground">Loading...</p>
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
       ) : clients.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
@@ -369,7 +552,7 @@ export function ClientsPage() {
           </div>
           <p className="font-medium">No clients yet</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Create a client to connect an AI channel
+            Connect your first Telegram bot to get started
           </p>
           <Button className="mt-4" onClick={() => setCreateOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />
@@ -383,53 +566,92 @@ export function ClientsPage() {
               <tr className="border-b bg-muted/50">
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">Name</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">Type</th>
-                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">AI Model</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Bot Status</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Controls</th>
                 <th className="px-4 py-3 text-right font-medium text-muted-foreground">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y">
-              {clients.map((client) => (
-                <tr key={client.id} className="hover:bg-muted/30 transition-colors">
-                  <td className="px-4 py-3 font-medium">{client.name}</td>
-                  <td className="px-4 py-3">
-                    <TypeBadge type={client.type} />
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge variant={client.active ? "default" : "secondary"}>
-                      {client.active ? "Active" : "Inactive"}
-                    </Badge>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setCredentialsClient({ id: client.id, name: client.name })}
+              {clients.map((client) => {
+                const botEntry = botStatuses[client.id]
+                const botStatus: BotStatus = botEntry?.status ?? "stopped"
+                return (
+                  <tr key={client.id} className="hover:bg-muted/30 transition-colors">
+                    <td className="px-4 py-3 font-medium">{client.name}</td>
+                    <td className="px-4 py-3">
+                      <TypeBadge type={client.type} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={() =>
+                          setAssignModelClient({
+                            id: client.id,
+                            name: client.name,
+                            ai_model_id: client.ai_model_id,
+                          })
+                        }
                       >
-                        <KeyRound className="mr-1.5 h-3.5 w-3.5" />
-                        Credentials
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                        onClick={() => setDeleteId(client.id)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        <Brain className="h-3.5 w-3.5 flex-shrink-0" />
+                        {client.ai_model_id && aiModelMap[client.ai_model_id] ? (
+                          <span>{aiModelMap[client.ai_model_id].name}</span>
+                        ) : (
+                          <span className="italic">Assign model</span>
+                        )}
+                      </button>
+                    </td>
+                    <td className="px-4 py-3">
+                      <BotStatusBadge status={botStatus} error={botEntry?.error} />
+                    </td>
+                    <td className="px-4 py-3">
+                      {client.type === "telegram" && (
+                        <BotControls clientId={client.id} status={botStatus} />
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            setCredentialsClient({ id: client.id, name: client.name })
+                          }
+                        >
+                          <KeyRound className="mr-1.5 h-3.5 w-3.5" />
+                          Credentials
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => setDeleteId(client.id)}
+                          disabled={botStatus === "running"}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* Create dialog */}
       <CreateClientDialog open={createOpen} onClose={() => setCreateOpen(false)} />
 
-      {/* Credentials dialog */}
+      {assignModelClient && (
+        <AssignModelDialog
+          clientId={assignModelClient.id}
+          clientName={assignModelClient.name}
+          currentModelId={assignModelClient.ai_model_id}
+          open={!!assignModelClient}
+          onClose={() => setAssignModelClient(null)}
+        />
+      )}
+
       {credentialsClient && (
         <CredentialsDialog
           clientId={credentialsClient.id}
@@ -439,7 +661,6 @@ export function ClientsPage() {
         />
       )}
 
-      {/* Delete confirmation */}
       <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>

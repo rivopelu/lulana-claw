@@ -50,4 +50,11 @@ export default class ClientRepository {
   async update(id: string, data: Partial<NewClient>): Promise<void> {
     await db.update(ClientEntity).set(data).where(eq(ClientEntity.id, id));
   }
+
+  async findAllActiveByType(type: Client["type"]): Promise<Client[]> {
+    return db
+      .select()
+      .from(ClientEntity)
+      .where(and(eq(ClientEntity.type, type), eq(ClientEntity.active, true)));
+  }
 }

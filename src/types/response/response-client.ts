@@ -17,6 +17,7 @@ export interface ResponseClientSummary {
   id: string;
   name: string;
   type: string;
+  ai_model_id: string | null;
   active: boolean;
   created_date: number;
 }

@@ -1,4 +1,5 @@
 export type ClientType = "telegram" | "discord" | "whatsapp" | "http"
+export type BotStatus = "starting" | "running" | "stopping" | "stopped" | "error"
 
 export interface ClientCredential {
   id: string
@@ -10,6 +11,7 @@ export interface Client {
   id: string
   name: string
   type: ClientType
+  ai_model_id: string | null
   active: boolean
   created_date: number
 }
