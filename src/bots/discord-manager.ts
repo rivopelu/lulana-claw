@@ -95,6 +95,13 @@ class DiscordManager {
 
       if (!userText) return;
 
+      // React with 👀 to indicate message has been read
+      try {
+        await message.react("👀");
+      } catch {
+        /* ignore — bot may lack permission */
+      }
+
       const fromName = message.author.username;
       const label = `[Discord:${clientId}:${chatId}]`;
       const channelName = (message.channel as any).name;

@@ -90,6 +90,13 @@ class BotManager {
       const fromName = ctx.from?.first_name ?? "User";
       const label = `[Bot:${clientId}:${chatId}]`;
 
+      // React with 👀 to indicate message has been read
+      try {
+        await ctx.react("👀");
+      } catch {
+        /* ignore — bot may lack permission */
+      }
+
       this.enqueue(clientId, chatId, async () => {
         // 1. Session check
         const session = await this.sessionService.getSession(clientId, chatId);
