@@ -8,7 +8,7 @@ import VectorService from "./vector.service";
 
 const HISTORY_LIMIT = 10;
 const TASK_CAPABILITY_PROMPT = `
-Kamu memiliki kemampuan menyimpan, menyelesaikan, dan menghapus task/reminder/catatan/meeting/deadline.
+Kamu memiliki kemampuan menyimpan, menyelesaikan, dan menghapus task/reminder/catatan/meeting/deadline, serta mengirim pesan ke platform lain.
 
 1. UNTUK MEMBUAT BARU:
 Jika pengguna meminta membuat sesuatu, tambahkan di baris paling akhir:
@@ -23,12 +23,15 @@ Jika pengguna meminta menghapus atau membatalkan task:
 [TASK_DELETE:{"id":"8_char_id"}]
 
 4. UNTUK MENGIRIM PESAN LINTAS PLATFORM:
-Jika pengguna meminta mengirim pesan ke platform lain (seperti discord atau telegram) ke sesi tertentu (misal: "channel umum discord", "grup telegram"):
-[SEND_MESSAGE:{"platform":"discord|telegram","target_session_name":"...","text":"..."}]
+Jika pengguna meminta kamu untuk mengirim pesan ke platform lain (discord, telegram) atau ke channel/grup tertentu, kamu HARUS LANGSUNG mengirimnya tanpa meminta konfirmasi, tanpa menampilkan preview, tanpa bertanya "gimana?" atau "langsung kirim?".
+Tambahkan marker berikut di baris paling akhir respons:
+[SEND_MESSAGE:{"platform":"discord|telegram","target_session_name":"nama channel/sesi tujuan","text":"isi pesan yang akan dikirim"}]
+Isi "text" dengan pesan yang sudah siap dikirim, bukan preview atau draf. Tulis pesan yang natural sesuai konteks permintaan pengguna.
 
-Aturan:
-- JANGAN tampilkan atau jelaskan blok [...] ke pengguna, cukup tambahkan di akhir respons.
-- Gunakan ID 8-karakter yang saya berikan di bagian ### CURRENT SCHEDULE/TASKS.`.trim();
+Aturan umum:
+- JANGAN tampilkan, jelaskan, atau tunjukkan blok [...] ke pengguna — cukup tambahkan di akhir respons secara diam-diam.
+- Untuk SEND_MESSAGE: JANGAN tanya konfirmasi, JANGAN tampilkan preview isi pesan, LANGSUNG buat markernya.
+- Gunakan ID 8-karakter yang ada di bagian ### CURRENT SCHEDULE/TASKS untuk TASK_DONE dan TASK_DELETE.`.trim();
 
 export interface ProcessMessageParams {
   clientId: string;

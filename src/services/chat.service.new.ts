@@ -8,13 +8,13 @@ import VectorService from "./vector.service";
 
 const HISTORY_LIMIT = 10;
 const TASK_CAPABILITY_PROMPT = `
-Kamu memiliki kemampuan menyimpan, menyelesaikan, dan menghapus task/reminder/catatan/meeting/deadline.
+Kamu memiliki kemampuan menyimpan, menyelesaikan, dan menghapus task/reminder/catatan/meeting/deadline, serta mengirim pesan ke platform lain.
 
 1. UNTUK MEMBUAT BARU:
 Jika pengguna meminta membuat sesuatu, tambahkan di baris paling akhir:
 [TASK_CREATE:{"type":"task|reminder|notes|meeting|deadline","title":"...","description":"...","remind_at_text":"..."}]
 
-2. UNTUK MENYELESAIKAN (DONE): 
+2. UNTUK MENYELESAIKAN (DONE):
 Jika pengguna mengatakan task tertentu sudah selesai, gunakan ID 8-karakter yang ada di daftar jadwal:
 [TASK_DONE:{"id":"8_char_id"}]
 
@@ -22,9 +22,16 @@ Jika pengguna mengatakan task tertentu sudah selesai, gunakan ID 8-karakter yang
 Jika pengguna meminta menghapus atau membatalkan task:
 [TASK_DELETE:{"id":"8_char_id"}]
 
-Aturan:
-- JANGAN tampilkan atau jelaskan blok [...] ke pengguna, cukup tambahkan di akhir respons.
-- Gunakan ID 8-karakter yang saya berikan di bagian ### CURRENT SCHEDULE/TASKS.`.trim();
+4. UNTUK MENGIRIM PESAN LINTAS PLATFORM:
+Jika pengguna meminta kamu untuk mengirim pesan ke platform lain (discord, telegram) atau ke channel/grup tertentu, kamu HARUS LANGSUNG mengirimnya tanpa meminta konfirmasi, tanpa menampilkan preview, tanpa bertanya "gimana?" atau "langsung kirim?".
+Tambahkan marker berikut di baris paling akhir respons:
+[SEND_MESSAGE:{"platform":"discord|telegram","target_session_name":"nama channel/sesi tujuan","text":"isi pesan yang akan dikirim"}]
+Isi "text" dengan pesan yang sudah siap dikirim, bukan preview atau draf. Tulis pesan yang natural sesuai konteks permintaan pengguna.
+
+Aturan umum:
+- JANGAN tampilkan, jelaskan, atau tunjukkan blok [...] ke pengguna — cukup tambahkan di akhir respons secara diam-diam.
+- Untuk SEND_MESSAGE: JANGAN tanya konfirmasi, JANGAN tampilkan preview isi pesan, LANGSUNG buat markernya.
+- Gunakan ID 8-karakter yang ada di bagian ### CURRENT SCHEDULE/TASKS untuk TASK_DONE dan TASK_DELETE.`.trim();
 
 export interface ProcessMessageParams {
   clientId: string;
@@ -166,15 +173,16 @@ export default class ChatService {
       label,
     );
 
-    const MARKER_RE = /\[TASK_(CREATE|DONE|DELETE):([\s\S]*?)\]/g;
+    const MARKER_RE = /\[(TASK_CREATE|TASK_DONE|TASK_DELETE|SEND_MESSAGE):([\s\S]*?)\]/g;
     const taskConfirmations: string[] = [];
+    const outgoingMarkers: any[] = [];
     let markerMatch: RegExpExecArray | null;
 
     while ((markerMatch = MARKER_RE.exec(rawReply)) !== null) {
       const action = markerMatch[1];
       try {
         const args = JSON.parse(markerMatch[2]);
-        if (action === "CREATE") {
+        if (action === "TASK_CREATE") {
           if (args.title) {
             const task = await this.taskService.create(
               {
@@ -196,11 +204,11 @@ export default class ChatService {
               ] || "📋";
             taskConfirmations.push(`${emo} *${task.title}* [${task.id.slice(-8)}]`);
           }
-        } else if (action === "DONE" || action === "DELETE") {
+        } else if (action === "TASK_DONE" || action === "TASK_DELETE") {
           const suffix = args.id;
           const target = pendingTasks.find((t) => t.id.endsWith(suffix));
           if (target) {
-            if (action === "DONE") {
+            if (action === "TASK_DONE") {
               await this.taskService.markDone(target.id, aiModel.account_id);
               taskConfirmations.push(`✅ *${target.title}* selesai!`);
             } else {
@@ -208,13 +216,25 @@ export default class ChatService {
               taskConfirmations.push(`🗑️ *${target.title}* dihapus.`);
             }
           }
+        } else if (action === "SEND_MESSAGE") {
+          outgoingMarkers.push({
+            type: "send_message",
+            platform: args.platform,
+            targetSessionName: args.target_session_name,
+            text: args.text,
+          });
+          taskConfirmations.push(
+            `📨 Pesan dikirim ke ${args.platform} (${args.target_session_name})`,
+          );
         }
       } catch (err) {
         logger.error(`${label} Marker parse error: ${(err as Error).message}`);
       }
     }
 
-    let reply = rawReply.replace(/\[TASK_(CREATE|DONE|DELETE):[\s\S]*?\]/g, "").trim();
+    let reply = rawReply
+      .replace(/\[(TASK_CREATE|TASK_DONE|TASK_DELETE|SEND_MESSAGE):[\s\S]*?\]/g, "")
+      .trim();
     if (taskConfirmations.length > 0) {
       reply = reply
         ? `${reply}\n\n✅ Berhasil:\n${taskConfirmations.join("\n")}`
@@ -238,7 +258,7 @@ export default class ChatService {
       replyEmbedding,
     );
 
-    return { reply, markers: [] };
+    return { reply, markers: outgoingMarkers };
   }
 }
 
