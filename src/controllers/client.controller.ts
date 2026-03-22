@@ -7,11 +7,14 @@ import ClientService from "../services/client.service";
 import type { RequestCreateClient } from "../types/request/request-create-client";
 import type { RequestUpdateClient } from "../types/request/request-update-client";
 import type { RequestUpsertCredential } from "../types/request/request-upsert-credential";
+import { BadRequestException } from "../libs/exception";
+import AiModelRepository from "../repositories/ai-model.repository";
 
 @Controller("client")
 @Middleware([JwtMiddleware])
 export class ClientController {
   private clientService = new ClientService();
+  private aiModelRepository = new AiModelRepository();
 
   @Post("")
   async createClient(c: Context) {
@@ -58,6 +61,21 @@ export class ClientController {
     const accountId = getAccountId(c);
     await this.clientService.deleteClient(id, accountId);
     return c.json(responseHelper.success("Client deleted"));
+  }
+
+  @Put(":id/model")
+  async setModel(c: Context) {
+    const id = c.req.param("id");
+    const accountId = getAccountId(c);
+    const { ai_model_id } = await c.req.json<{ ai_model_id: string | null }>();
+
+    if (ai_model_id) {
+      const model = await this.aiModelRepository.findByIdAndAccountId(ai_model_id, accountId);
+      if (!model) throw new BadRequestException("AI model not found");
+    }
+
+    await this.clientService.setClientModel(id, ai_model_id ?? null, accountId);
+    return c.json(responseHelper.success("Client model updated"));
   }
 
   @Post(":id/credential")

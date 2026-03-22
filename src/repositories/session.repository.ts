@@ -31,6 +31,14 @@ export default class SessionRepository {
     await db.insert(SessionEntity).values(session);
   }
 
+  async findAllByClientId(clientId: string): Promise<Session[]> {
+    return db
+      .select()
+      .from(SessionEntity)
+      .where(and(eq(SessionEntity.client_id, clientId), eq(SessionEntity.active, true)))
+      .orderBy(SessionEntity.created_date);
+  }
+
   async update(id: string, data: Partial<NewSession>): Promise<void> {
     await db.update(SessionEntity).set(data).where(eq(SessionEntity.id, id));
   }

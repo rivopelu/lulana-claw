@@ -1,0 +1,2 @@
+ALTER TABLE "session" ADD COLUMN "ai_model_id" varchar(255);--> statement-breakpoint
+ALTER TABLE "session" ADD CONSTRAINT "session_ai_model_id_ai_model_id_fk" FOREIGN KEY ("ai_model_id") REFERENCES "public"."ai_model"("id") ON DELETE no action ON UPDATE no action;

@@ -22,6 +22,15 @@ export function useMasterAiModels(provider = "openai") {
   })
 }
 
+export function useConnectOpenRouter() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { code: string; name: string; model_id: string }) =>
+      apiPost<BaseResponse<null>>(API.AI_MODEL.OAUTH_OPENROUTER, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["ai-models"] }),
+  })
+}
+
 export function useCreateAiModel() {
   const qc = useQueryClient()
   return useMutation({
@@ -39,7 +48,7 @@ export function useUpdateAiModel() {
       body,
     }: {
       id: string
-      body: { name?: string; model_id?: string; api_key?: string }
+      body: { name?: string; model_id?: string; provider?: string; api_key?: string }
     }) => apiPut<BaseResponse<null>>(API.AI_MODEL.DETAIL(id), body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["ai-models"] }),
   })

@@ -10,6 +10,15 @@ export default class AiModelRepository {
       .where(and(eq(AiModelEntity.account_id, accountId), eq(AiModelEntity.active, true)));
   }
 
+  async findById(id: string): Promise<AiModel | undefined> {
+    const data = await db
+      .select()
+      .from(AiModelEntity)
+      .where(and(eq(AiModelEntity.id, id), eq(AiModelEntity.active, true)))
+      .limit(1);
+    return data[0];
+  }
+
   async findByIdAndAccountId(id: string, accountId: string): Promise<AiModel | undefined> {
     const data = await db
       .select()

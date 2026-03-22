@@ -73,12 +73,21 @@ export function useCreateClient() {
 export function useUpdateClient() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, body }: { id: string; body: { name: string } }) =>
+    mutationFn: ({ id, body }: { id: string; body: { name: string; ai_model_id?: string | null } }) =>
       apiPut<BaseResponse<null>>(API.CLIENT.DETAIL(id), body),
     onSuccess: (_data, { id }) => {
       qc.invalidateQueries({ queryKey: ["clients"] })
       qc.invalidateQueries({ queryKey: ["clients", id] })
     },
+  })
+}
+
+export function useSetClientModel() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, aiModelId }: { id: string; aiModelId: string | null }) =>
+      apiPut<BaseResponse<null>>(API.CLIENT.SET_MODEL(id), { ai_model_id: aiModelId }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["clients"] }),
   })
 }
 

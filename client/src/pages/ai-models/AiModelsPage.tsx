@@ -1,8 +1,9 @@
 import { useState } from "react"
+import { useNavigate } from "react-router"
 import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
-import { Plus, Trash2, Pencil, Brain, Loader2, Eye, EyeOff } from "lucide-react"
+import { Plus, Trash2, Pencil, Brain, Loader2, Eye, EyeOff, ExternalLink } from "lucide-react"
 import { PageHeader } from "@/components/layout/PageHeader"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -40,7 +41,8 @@ import {
   useDeleteAiModel,
   useMasterAiModels,
 } from "@/hooks/useAiModels"
-import type { AiModel } from "@/types/ai-model"
+import { ROUTES } from "@/lib/constants"
+import type { AiModel, AiProvider } from "@/types/ai-model"
 
 // ─── Create / Edit dialog ──────────────────────────────────────────────────
 
@@ -58,10 +60,89 @@ const editSchema = z.object({
 })
 type EditForm = z.infer<typeof editSchema>
 
+// ─── OpenRouter OAuth form ──────────────────────────────────────────────────
+
+const orSchema = z.object({
+  name: z.string().min(1, "Label is required"),
+  model_id: z.string().min(1, "Model is required"),
+})
+type OrForm = z.infer<typeof orSchema>
+
+function OpenRouterForm({ onCancel }: { onCancel: () => void }) {
+  const navigate = useNavigate()
+  const { data: models = [] } = useMasterAiModels("openrouter")
+  const {
+    register,
+    handleSubmit,
+    control,
+    formState: { errors },
+  } = useForm<OrForm>({ resolver: zodResolver(orSchema) })
+
+  const onSubmit = (values: OrForm) => {
+    sessionStorage.setItem("openrouter_pending", JSON.stringify(values))
+    const callbackUrl = `${window.location.origin}${ROUTES.OPENROUTER_CALLBACK}`
+    window.location.href = `https://openrouter.ai/auth?callback_url=${encodeURIComponent(callbackUrl)}`
+  }
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
+      <div className="rounded-md bg-muted/50 border px-3 py-2.5 text-xs text-muted-foreground leading-relaxed">
+        You'll be redirected to <span className="font-medium text-foreground">OpenRouter</span> to
+        authorize access. No API key needed — the key is generated automatically via OAuth.
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label>Label</Label>
+        <Input placeholder="e.g. My OpenRouter GPT-4o" {...register("name")} />
+        {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label>Model</Label>
+        <Controller
+          control={control}
+          name="model_id"
+          render={({ field }) => (
+            <Select onValueChange={field.onChange} value={field.value ?? ""}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select model" />
+              </SelectTrigger>
+              <SelectContent>
+                {models.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    <span className="font-medium">{m.name}</span>
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      {(m.context_window / 1000).toFixed(0)}k ctx
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        />
+        {errors.model_id && <p className="text-xs text-destructive">{errors.model_id.message}</p>}
+      </div>
+
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="submit">
+          <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+          Authorize via OpenRouter
+        </Button>
+      </DialogFooter>
+    </form>
+  )
+}
+
+// ─── Create dialog ──────────────────────────────────────────────────────────
+
 function CreateDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const create = useCreateAiModel()
-  const { data: masterModels = [] } = useMasterAiModels()
   const [showKey, setShowKey] = useState(false)
+  const [provider, setProvider] = useState<AiProvider>("openai")
+  const { data: masterModels = [] } = useMasterAiModels(provider === "openrouter" ? "openrouter" : provider)
 
   const {
     register,
@@ -71,8 +152,186 @@ function CreateDialog({ open, onClose }: { open: boolean; onClose: () => void })
     formState: { errors },
   } = useForm<CreateForm>({ resolver: zodResolver(createSchema) })
 
+  const handleClose = () => {
+    reset()
+    setProvider("openai")
+    onClose()
+  }
+
   const onSubmit = async (values: CreateForm) => {
-    await create.mutateAsync({ ...values, provider: "openai" })
+    await create.mutateAsync({ ...values, provider })
+    reset()
+    onClose()
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add AI Model</DialogTitle>
+          <DialogDescription>Configure an AI model for your bots.</DialogDescription>
+        </DialogHeader>
+
+        {/* Provider selector */}
+        <div className="flex rounded-lg border overflow-hidden text-sm">
+          {(["openai", "gemini", "anthropic", "openrouter"] as AiProvider[]).map((p) => (
+            <button
+              key={p}
+              type="button"
+              className={`flex-1 py-1.5 text-xs font-medium transition-colors ${
+                provider === p
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50"
+              }`}
+              onClick={() => { setProvider(p); reset() }}
+            >
+              {PROVIDER_LABEL[p]}
+            </button>
+          ))}
+        </div>
+
+        {provider === "openrouter" ? (
+          <OpenRouterForm onCancel={handleClose} />
+        ) : (
+          <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <Label>Label</Label>
+              <Input
+                placeholder={
+                  provider === "gemini" ? "e.g. Gemini 2.0 Flash" :
+                  provider === "anthropic" ? "e.g. Claude Sonnet 4.5" :
+                  "e.g. Production GPT-4o"
+                }
+                {...register("name")}
+              />
+              {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label>Model</Label>
+              <Controller
+                control={control}
+                name="model_id"
+                render={({ field }) => (
+                  <Select onValueChange={field.onChange} value={field.value ?? ""}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select model" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {masterModels.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          <span className="font-medium">{m.name}</span>
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            {(m.context_window / 1000).toFixed(0)}k ctx
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+              {errors.model_id && (
+                <p className="text-xs text-destructive">{errors.model_id.message}</p>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label>
+                API Key
+                {provider === "gemini" && (
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">— aistudio.google.com</span>
+                )}
+                {provider === "anthropic" && (
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">— console.anthropic.com</span>
+                )}
+              </Label>
+              <div className="relative">
+                <Input
+                  type={showKey ? "text" : "password"}
+                  placeholder={
+                    provider === "gemini" ? "AIzaSy..." :
+                    provider === "anthropic" ? "sk-ant-..." :
+                    "sk-..."
+                  }
+                  {...register("api_key")}
+                  className="pr-10"
+                  autoComplete="off"
+                />
+                <button
+                  type="button"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+                  onClick={() => setShowKey((v) => !v)}
+                >
+                  {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              {errors.api_key && (
+                <p className="text-xs text-destructive">{errors.api_key.message}</p>
+              )}
+            </div>
+
+            {create.error && (
+              <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {(create.error as Error).message}
+              </p>
+            )}
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={handleClose}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={create.isPending}>
+                {create.isPending ? "Adding..." : "Add Model"}
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function EditDialog({
+  model,
+  open,
+  onClose,
+}: {
+  model: AiModel
+  open: boolean
+  onClose: () => void
+}) {
+  const update = useUpdateAiModel()
+  const [showKey, setShowKey] = useState(false)
+  const [provider, setProvider] = useState<AiProvider>(model.provider)
+  const { data: masterModels = [] } = useMasterAiModels(provider)
+
+  const {
+    register,
+    handleSubmit,
+    control,
+    reset,
+    setValue,
+    formState: { errors },
+  } = useForm<EditForm>({
+    resolver: zodResolver(editSchema),
+    defaultValues: { name: model.name, model_id: model.model_id },
+  })
+
+  const handleProviderChange = (p: AiProvider) => {
+    setProvider(p)
+    setValue("model_id", "")
+  }
+
+  const onSubmit = async (values: EditForm) => {
+    await update.mutateAsync({
+      id: model.id,
+      body: {
+        name: values.name,
+        model_id: values.model_id,
+        provider,
+        ...(values.api_key ? { api_key: values.api_key } : {}),
+      },
+    })
     reset()
     onClose()
   }
@@ -81,13 +340,31 @@ function CreateDialog({ open, onClose }: { open: boolean; onClose: () => void })
     <Dialog open={open} onOpenChange={(o) => !o && (reset(), onClose())}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Add AI Model</DialogTitle>
-          <DialogDescription>Configure an OpenAI model with its API key.</DialogDescription>
+          <DialogTitle>Edit AI Model</DialogTitle>
+          <DialogDescription>Leave API key blank to keep the current key.</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
+          {/* Provider selector */}
+          <div className="flex rounded-lg border overflow-hidden text-sm">
+            {(["openai", "gemini", "anthropic", "openrouter"] as AiProvider[]).map((p) => (
+              <button
+                key={p}
+                type="button"
+                className={`flex-1 py-1.5 text-xs font-medium transition-colors ${
+                  provider === p
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                }`}
+                onClick={() => handleProviderChange(p)}
+              >
+                {PROVIDER_LABEL[p]}
+              </button>
+            ))}
+          </div>
+
           <div className="flex flex-col gap-1.5">
             <Label>Label</Label>
-            <Input placeholder="e.g. Production GPT-4o" {...register("name")} />
+            <Input {...register("name")} />
             {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
           </div>
 
@@ -97,7 +374,7 @@ function CreateDialog({ open, onClose }: { open: boolean; onClose: () => void })
               control={control}
               name="model_id"
               render={({ field }) => (
-                <Select onValueChange={field.onChange} value={field.value}>
+                <Select onValueChange={field.onChange} value={field.value ?? ""}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select model" />
                   </SelectTrigger>
@@ -120,131 +397,12 @@ function CreateDialog({ open, onClose }: { open: boolean; onClose: () => void })
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label>OpenAI API Key</Label>
-            <div className="relative">
-              <Input
-                type={showKey ? "text" : "password"}
-                placeholder="sk-..."
-                {...register("api_key")}
-                className="pr-10"
-                autoComplete="off"
-              />
-              <button
-                type="button"
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
-                onClick={() => setShowKey((v) => !v)}
-              >
-                {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-            {errors.api_key && (
-              <p className="text-xs text-destructive">{errors.api_key.message}</p>
-            )}
-          </div>
-
-          {create.error && (
-            <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {(create.error as Error).message}
-            </p>
-          )}
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => (reset(), onClose())}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={create.isPending}>
-              {create.isPending ? "Adding..." : "Add Model"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function EditDialog({
-  model,
-  open,
-  onClose,
-}: {
-  model: AiModel
-  open: boolean
-  onClose: () => void
-}) {
-  const update = useUpdateAiModel()
-  const { data: masterModels = [] } = useMasterAiModels()
-  const [showKey, setShowKey] = useState(false)
-
-  const {
-    register,
-    handleSubmit,
-    control,
-    reset,
-    formState: { errors },
-  } = useForm<EditForm>({
-    resolver: zodResolver(editSchema),
-    defaultValues: { name: model.name, model_id: model.model_id },
-  })
-
-  const onSubmit = async (values: EditForm) => {
-    await update.mutateAsync({
-      id: model.id,
-      body: {
-        name: values.name,
-        model_id: values.model_id,
-        ...(values.api_key ? { api_key: values.api_key } : {}),
-      },
-    })
-    reset()
-    onClose()
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && (reset(), onClose())}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Edit AI Model</DialogTitle>
-          <DialogDescription>
-            Leave API key blank to keep the current key.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label>Label</Label>
-            <Input {...register("name")} />
-            {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label>Model</Label>
-            <Controller
-              control={control}
-              name="model_id"
-              render={({ field }) => (
-                <Select onValueChange={field.onChange} value={field.value}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {masterModels.map((m) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        <span className="font-medium">{m.name}</span>
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          {(m.context_window / 1000).toFixed(0)}k ctx
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
             <Label>
               New API Key{" "}
               <span className="text-xs text-muted-foreground font-normal">
                 (current: {model.api_key_hint})
+                {provider === "gemini" && " — aistudio.google.com"}
+                {provider === "anthropic" && " — console.anthropic.com"}
               </span>
             </Label>
             <div className="relative">
@@ -265,6 +423,12 @@ function EditDialog({
             </div>
           </div>
 
+          {update.error && (
+            <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {(update.error as Error).message}
+            </p>
+          )}
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => (reset(), onClose())}>
               Cancel
@@ -281,7 +445,12 @@ function EditDialog({
 
 // ─── Main page ─────────────────────────────────────────────────────────────
 
-const PROVIDER_LABEL: Record<string, string> = { openai: "OpenAI" }
+const PROVIDER_LABEL: Record<string, string> = {
+  openai: "OpenAI",
+  openrouter: "OpenRouter",
+  gemini: "Gemini",
+  anthropic: "Anthropic",
+}
 
 export function AiModelsPage() {
   const { data: models = [], isLoading } = useAiModels()
@@ -315,7 +484,7 @@ export function AiModelsPage() {
           </div>
           <p className="font-medium">No AI models configured</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Add an OpenAI model with its API key to get started
+            Add an OpenAI model with an API key, or connect via OpenRouter OAuth
           </p>
           <Button className="mt-4" onClick={() => setCreateOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />

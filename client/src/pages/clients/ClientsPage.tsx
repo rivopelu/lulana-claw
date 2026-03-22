@@ -36,8 +36,8 @@ import {
   useClients,
   useClient,
   useCreateClient,
-  useUpdateClient,
   useDeleteClient,
+  useSetClientModel,
   useAddCredential,
   useUpdateCredential,
   useDeleteCredential,
@@ -450,14 +450,11 @@ function AssignModelDialog({
   onClose: () => void
 }) {
   const { data: models = [] } = useAiModels()
-  const updateClient = useUpdateClient()
-  const [selected, setSelected] = useState<string>(currentModelId ?? "")
+  const setModel = useSetClientModel()
+  const [selected, setSelected] = useState<string>(currentModelId ?? "__none__")
 
   const handleSave = async () => {
-    await updateClient.mutateAsync({
-      id: clientId,
-      body: { name: clientName, ai_model_id: selected || null },
-    })
+    await setModel.mutateAsync({ id: clientId, aiModelId: selected === "__none__" ? null : selected })
     onClose()
   }
 
@@ -483,7 +480,7 @@ function AssignModelDialog({
               <SelectValue placeholder="Select a model" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">
+              <SelectItem value="__none__">
                 <span className="text-muted-foreground">None</span>
               </SelectItem>
               {models.map((m) => (
@@ -500,8 +497,8 @@ function AssignModelDialog({
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={updateClient.isPending}>
-            {updateClient.isPending ? "Saving..." : "Save"}
+          <Button onClick={handleSave} disabled={setModel.isPending}>
+            {setModel.isPending ? "Saving..." : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>

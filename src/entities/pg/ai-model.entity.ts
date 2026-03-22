@@ -3,7 +3,12 @@ import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { baseEntity, entityId } from "./_base.entity";
 import { AccountEntity } from "./account.entity";
 
-export const aiProviderEnum = pgEnum("ai_provider", ["openai"]);
+export const aiProviderEnum = pgEnum("ai_provider", [
+  "openai",
+  "openrouter",
+  "gemini",
+  "anthropic",
+]);
 
 export const AiModelEntity = pgTable("ai_model", {
   ...entityId,

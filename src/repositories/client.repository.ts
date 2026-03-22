@@ -27,6 +27,15 @@ export default class ClientRepository {
     return { data, total: total[0].count };
   }
 
+  async findById(id: string): Promise<Client | undefined> {
+    const data = await db
+      .select()
+      .from(ClientEntity)
+      .where(and(eq(ClientEntity.id, id), eq(ClientEntity.active, true)))
+      .limit(1);
+    return data[0];
+  }
+
   async findByIdAndAccountId(id: string, accountId: string): Promise<Client | undefined> {
     const data = await db
       .select()

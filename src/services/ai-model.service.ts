@@ -63,6 +63,9 @@ export default class AiModelService {
     await this.repository.update(id, {
       ...(body.name && { name: body.name }),
       ...(body.model_id && { model_id: body.model_id }),
+      ...(body.provider && {
+        provider: body.provider as "openai" | "openrouter" | "gemini" | "anthropic",
+      }),
       ...(body.api_key && { api_key: body.api_key }),
       updated_by: accountId,
       updated_date: Date.now(),

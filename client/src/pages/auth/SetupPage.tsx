@@ -1,13 +1,16 @@
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
-import { useNavigate } from "react-router"
+import { Navigate, useNavigate } from "react-router"
 import { Bot } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { useSetupAccount } from "@/hooks/useAuth"
+import { useSetup, useSetupAccount } from "@/hooks/useAuth"
+import { getToken } from "@/stores/authStore"
+import { LoadingSpinner } from "@/components/shared/LoadingSpinner"
 import { queryClient } from "@/lib/queryClient"
+import { ROUTES } from "@/lib/constants"
 
 const schema = z
   .object({
@@ -25,7 +28,17 @@ type FormValues = z.infer<typeof schema>
 
 export function SetupPage() {
   const navigate = useNavigate()
+  const { data: setupStatus, isLoading: setupLoading } = useSetup()
   const setup = useSetupAccount()
+
+  // Already logged in → dashboard
+  if (getToken()) return <Navigate to={ROUTES.DASHBOARD} replace />
+
+  // Already initialized → login
+  if (!setupLoading && setupStatus?.initialized === true)
+    return <Navigate to={ROUTES.LOGIN} replace />
+
+  if (setupLoading) return <LoadingSpinner />
 
   const {
     register,

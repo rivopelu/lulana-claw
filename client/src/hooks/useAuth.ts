@@ -9,8 +9,9 @@ export function useSetup() {
   return useQuery({
     queryKey: ["auth", "setup"],
     queryFn: () => apiGet<BaseResponse<{ initialized: boolean }>>(API.AUTH.SETUP),
-    select: (res) => res.response_data ?? { initialized: false },
-    staleTime: Infinity, // setup state never changes mid-session
+    select: (res) => res.response_data,
+    staleTime: Infinity,
+    retry: false,
   })
 }
 

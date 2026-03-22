@@ -1,14 +1,17 @@
 import SessionRepository from "../repositories/session.repository";
 import SessionMessageRepository from "../repositories/session-message.repository";
+import ClientRepository from "../repositories/client.repository";
 import type { Session } from "../entities/pg/session.entity";
 import type { ISessionMessage } from "../entities/mongo/session-message.schema";
 import { generateId } from "../libs/string-utils";
+import { NotFoundException } from "../libs/exception";
 
 export type ChatType = "private" | "group" | "supergroup" | "channel";
 
 export default class SessionService {
   private sessionRepository = new SessionRepository();
   private messageRepository = new SessionMessageRepository();
+  private clientRepository = new ClientRepository();
 
   async setupSession(
     clientId: string,
@@ -16,13 +19,14 @@ export default class SessionService {
     chatType: ChatType,
     name: string,
     createdBy: string,
+    aiModelId?: string | null,
   ): Promise<Session> {
     const existing = await this.sessionRepository.findByClientIdAndChatId(clientId, chatId);
 
     if (existing) {
-      // Rename existing session
       await this.sessionRepository.update(existing.id, {
         name,
+        ...(aiModelId !== undefined && { ai_model_id: aiModelId }),
         updated_by: createdBy,
         updated_date: Date.now(),
       });
@@ -35,14 +39,39 @@ export default class SessionService {
       chat_id: chatId,
       chat_type: chatType,
       name,
+      ai_model_id: aiModelId ?? null,
       created_by: createdBy,
     };
     await this.sessionRepository.save(newSession);
     return (await this.sessionRepository.findById(newSession.id))!;
   }
 
+  async setSessionModel(
+    sessionId: string,
+    aiModelId: string | null,
+    updatedBy: string,
+  ): Promise<void> {
+    await this.sessionRepository.update(sessionId, {
+      ai_model_id: aiModelId,
+      updated_by: updatedBy,
+      updated_date: Date.now(),
+    });
+  }
+
+  async getSessionById(sessionId: string, accountId: string): Promise<Session> {
+    const session = await this.sessionRepository.findById(sessionId);
+    if (!session) throw new NotFoundException("Session not found");
+    const client = await this.clientRepository.findByIdAndAccountId(session.client_id, accountId);
+    if (!client) throw new NotFoundException("Session not found");
+    return session;
+  }
+
   async getSession(clientId: string, chatId: number): Promise<Session | undefined> {
     return this.sessionRepository.findByClientIdAndChatId(clientId, chatId);
+  }
+
+  async getSessionsByClientId(clientId: string): Promise<Session[]> {
+    return this.sessionRepository.findAllByClientId(clientId);
   }
 
   async addMessage(

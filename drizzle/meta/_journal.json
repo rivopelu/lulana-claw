@@ -36,6 +36,34 @@
       "when": 1774176899445,
       "tag": "0004_cold_klaw",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1774179845164,
+      "tag": "0005_mysterious_squirrel_girl",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1774181947852,
+      "tag": "0006_outstanding_whistler",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1774182704201,
+      "tag": "0007_rare_roland_deschain",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1774183021806,
+      "tag": "0008_overrated_black_widow",
+      "breakpoints": true
     }
   ]
 }

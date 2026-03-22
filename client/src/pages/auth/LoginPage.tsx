@@ -32,8 +32,8 @@ export function LoginPage() {
   // Already logged in → go to dashboard
   if (getToken()) return <Navigate to={ROUTES.DASHBOARD} replace />
 
-  // System not set up → go to setup
-  if (!setupLoading && !setup?.initialized) return <Navigate to={ROUTES.SETUP} replace />
+  // System not set up → go to setup (only when explicitly false, never on error/undefined)
+  if (!setupLoading && setup?.initialized === false) return <Navigate to={ROUTES.SETUP} replace />
 
   if (setupLoading) return <LoadingSpinner />
 

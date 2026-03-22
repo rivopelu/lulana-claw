@@ -75,6 +75,17 @@ export default class ClientService {
     };
   }
 
+  async setClientModel(id: string, aiModelId: string | null, accountId: string): Promise<void> {
+    const client = await this.clientRepository.findByIdAndAccountId(id, accountId);
+    if (!client) throw new NotFoundException("Client not found");
+
+    await this.clientRepository.update(id, {
+      ai_model_id: aiModelId,
+      updated_by: accountId,
+      updated_date: Date.now(),
+    });
+  }
+
   async updateClient(id: string, body: RequestUpdateClient, accountId: string): Promise<void> {
     const client = await this.clientRepository.findByIdAndAccountId(id, accountId);
     if (!client) throw new NotFoundException("Client not found");

@@ -44,6 +44,37 @@ export class AiModelController {
     return c.json(responseHelper.success("AI model updated"));
   }
 
+  /** POST /ai-model/oauth/openrouter — exchange OpenRouter OAuth code for API key + create model */
+  @Post("oauth/openrouter")
+  async connectOpenRouter(c: Context) {
+    const accountId = getAccountId(c);
+    const { code, name, model_id } = await c.req.json<{
+      code: string;
+      name: string;
+      model_id: string;
+    }>();
+
+    // Exchange code for API key via OpenRouter
+    const resp = await fetch("https://openrouter.ai/api/v1/auth/keys", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+
+    if (!resp.ok) {
+      throw new Error(`OpenRouter OAuth failed: ${resp.statusText}`);
+    }
+
+    const data = (await resp.json()) as { key?: string };
+    if (!data.key) throw new Error("OpenRouter did not return an API key");
+
+    await this.aiModelService.create(
+      { name, model_id, provider: "openrouter", api_key: data.key },
+      accountId,
+    );
+    return c.json(responseHelper.success("OpenRouter model connected"));
+  }
+
   @Delete(":id")
   async delete(c: Context) {
     const id = c.req.param("id");

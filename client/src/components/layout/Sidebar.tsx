@@ -1,11 +1,12 @@
 import { Link, useLocation, useNavigate } from "react-router"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, Bot, Brain, LogOut } from "lucide-react"
+import { LayoutDashboard, Bot, Brain, MessageSquare, LogOut } from "lucide-react"
 import { useMe, useSignOut } from "@/hooks/useAuth"
 
 const navItems = [
   { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
   { label: "Clients", path: "/clients", icon: Bot },
+  { label: "Sessions", path: "/sessions", icon: MessageSquare },
   { label: "AI Models", path: "/ai-models", icon: Brain },
 ]
 

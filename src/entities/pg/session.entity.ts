@@ -2,6 +2,7 @@ import { bigint, pgEnum, pgTable, varchar } from "drizzle-orm/pg-core";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { baseEntity, entityId } from "./_base.entity";
 import { ClientEntity } from "./client.entity";
+import { AiModelEntity } from "./ai-model.entity";
 
 export const chatTypeEnum = pgEnum("chat_type", ["private", "group", "supergroup", "channel"]);
 
@@ -15,6 +16,8 @@ export const SessionEntity = pgTable("session", {
   chat_type: chatTypeEnum("chat_type").notNull(),
   /** Name set by the user via /setup <name> */
   name: varchar("name", { length: 255 }).notNull(),
+  /** AI model for this specific session — overrides client-level default */
+  ai_model_id: varchar("ai_model_id", { length: 255 }).references(() => AiModelEntity.id),
   ...baseEntity,
 });
 

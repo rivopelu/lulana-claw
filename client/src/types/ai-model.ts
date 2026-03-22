@@ -1,4 +1,4 @@
-export type AiProvider = "openai"
+export type AiProvider = "openai" | "openrouter" | "gemini" | "anthropic"
 
 export interface AiModel {
   id: string
