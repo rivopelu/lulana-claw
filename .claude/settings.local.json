@@ -4,7 +4,10 @@
       "Bash(bun test:*)",
       "Bash(bunx tsc:*)",
       "Bash(bunx eslint:*)",
-      "Bash(bun run:*)"
+      "Bash(bun run:*)",
+      "Bash(bun install:*)",
+      "Bash(bun add:*)",
+      "Bash(bunx shadcn@latest:*)"
     ]
   }
 }
