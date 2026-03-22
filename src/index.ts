@@ -21,10 +21,6 @@ app.get("/panic", () => {
 });
 new InitMiddlewares(app);
 
-app.get("/", (c) => {
-  return c.json({ message: "welcome" });
-});
-
 app.use("/assets/*", serveStatic({ root: "./client/dist" }));
 app.get("*", serveStatic({ path: "./client/dist/index.html" }));
 

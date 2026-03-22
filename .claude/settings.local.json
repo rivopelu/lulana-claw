@@ -9,7 +9,8 @@
       "Bash(bun add:*)",
       "Bash(bunx shadcn@latest:*)",
       "Bash(bunx vite:*)",
-      "Bash(grep \"\"version\"\":*)"
+      "Bash(grep \"\"version\"\":*)",
+      "Bash(pm2 start:*)"
     ]
   }
 }
