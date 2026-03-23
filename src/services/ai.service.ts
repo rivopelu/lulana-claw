@@ -54,7 +54,7 @@ export default class AiService {
     const response = await client.chat.completions.create({
       model: modelId,
       messages,
-      temperature: 0.7,
+      temperature: 0.6,
     });
 
     return (
@@ -89,7 +89,7 @@ export default class AiService {
     const response = await client.chat.completions.create({
       model: modelId,
       messages,
-      temperature: 0.7,
+      temperature: 0.6,
       ...(tools.length > 0 ? { tools, tool_choice: "auto" } : {}),
     });
 

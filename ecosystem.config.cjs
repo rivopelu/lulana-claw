@@ -1,11 +1,10 @@
 module.exports = {
   apps: [
     {
-      name: "lulana-claw",
-      script: "bun",
-      args: "run src/index.ts",
+      name: "luna-bot",
+      script: "src/index.ts",
+      interpreter: "bun",
       cwd: __dirname,
-      interpreter: "none",
       env: {
         NODE_ENV: "production",
       },

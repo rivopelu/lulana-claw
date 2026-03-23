@@ -2,20 +2,45 @@ import logger from "../configs/logger";
 import SessionMessageRepository from "../repositories/session-message.repository";
 import AiService from "./ai.service";
 import ContextService from "./context.service";
+import type { ISessionMessage } from "../entities/mongo/session-message.schema";
 
 export const AUTO_LEARN_INTERVAL = 50;
+/** Every N messages in a session, analyze the last exchange for global importance */
+const GLOBAL_LEARN_INTERVAL = 8;
+
+const GLOBAL_CONTEXT_ANALYSIS_PROMPT = `Kamu adalah sistem analisis percakapan Luna.
+
+Tugas: Analisis percakapan berikut dan tentukan apakah ada INFORMASI PENTING yang harus disimpan sebagai pengetahuan GLOBAL Luna — yaitu pengetahuan yang berlaku dan relevan di SEMUA percakapan Luna di semua platform.
+
+**Layak disimpan sebagai global:**
+- Kemampuan/integrasi baru Luna (platform baru, tools baru, fitur baru)
+- Fakta penting tentang identitas atau peran Luna yang ditetapkan admin/pemilik
+- Konfigurasi atau preferensi yang diminta berlaku secara global
+- Informasi penting tentang pemilik/admin Luna yang harus selalu diingat
+- Event penting atau perubahan besar yang memengaruhi cara Luna berinteraksi
+
+**Tidak perlu disimpan sebagai global:**
+- Percakapan sehari-hari, obrolan santai, pertanyaan umum
+- Informasi personal pengguna biasa (sudah tersimpan di session context)
+- Topik sementara atau situasional
+- Hal yang sudah jelas dari konteks identitas Luna
+
+Balas HANYA dengan JSON valid (tanpa markdown fence):
+{"is_important": true, "content": "ringkasan pengetahuan global yang perlu disimpan"}
+atau
+{"is_important": false}`.trim();
 const ANALYSIS_HISTORY_LIMIT = 200;
 
-const CONTEXT_ANALYSIS_PROMPT = `Kamu adalah sistem analisis memori percakapan. Tugasmu adalah membuat dokumen konteks yang merangkum informasi penting dari riwayat percakapan berikut, agar asisten AI bisa memahami pengguna lebih baik di masa mendatang.
+const CONTEXT_ANALYSIS_PROMPT = `You are a conversation memory analysis system. Your task is to produce a context document summarizing important information from the following conversation history, so the AI assistant can better understand the user in future interactions.
 
-Sertakan bagian-bagian berikut jika relevan:
-1. **Informasi Pengguna** — nama, pekerjaan, lokasi, peran, atau fakta pribadi yang disebutkan
-2. **Topik & Proyek Aktif** — hal-hal yang sedang dikerjakan atau sering dibahas
-3. **Preferensi & Kebiasaan** — gaya komunikasi, bahasa yang disukai, pola permintaan
-4. **Pengetahuan Penting** — keputusan, informasi teknis, atau konteks yang perlu diingat
-5. **Pola Interaksi** — bagaimana pengguna biasanya meminta bantuan
+Include the following sections where relevant:
+1. **User Information** — name, occupation, location, role, or personal facts mentioned
+2. **Active Topics & Projects** — things currently being worked on or frequently discussed
+3. **Preferences & Habits** — communication style, preferred language, common request patterns
+4. **Key Knowledge** — decisions made, technical context, or background that should be remembered
+5. **Interaction Patterns** — how the user typically asks for help
 
-Tulis dalam format markdown yang ringkas dan terstruktur. Hilangkan informasi yang tidak relevan atau basi. Fokus pada hal yang akan membuat asisten lebih personal dan relevan.`.trim();
+Write in concise, structured markdown. Omit irrelevant or stale information. Focus on what will make the assistant more personalized and relevant.`.trim();
 
 export interface AutoLearnParams {
   sessionId: string;
@@ -27,6 +52,17 @@ export interface AutoLearnParams {
     model_id: string;
     provider: string;
     account_id: string;
+  };
+}
+
+export interface GlobalLearnParams {
+  sessionId: string;
+  accountId: string;
+  lastExchange: { userText: string; lunaReply: string };
+  aiModel: {
+    api_key: string;
+    model_id: string;
+    provider: string;
   };
 }
 
@@ -113,5 +149,40 @@ export default class LearningService {
     }
 
     return analysisResult;
+  }
+
+  /**
+   * Analyze the last exchange and update global context if important.
+   * Fire-and-forget — caller should NOT await this.
+   * Runs every GLOBAL_LEARN_INTERVAL messages to throttle API calls.
+   */
+  async maybeUpdateGlobalContext(params: GlobalLearnParams): Promise<void> {
+    try {
+      const count = await this.messageRepository.countBySessionId(params.sessionId);
+      if (count === 0 || count % GLOBAL_LEARN_INTERVAL !== 0) return;
+
+      const { userText, lunaReply } = params.lastExchange;
+      const exchange = `[User]: ${userText}\n[Luna]: ${lunaReply}`;
+
+      const raw = await this.aiService.chat(
+        params.aiModel.api_key,
+        params.aiModel.model_id,
+        params.aiModel.provider,
+        [],
+        `Percakapan:\n\n${exchange}`,
+        GLOBAL_CONTEXT_ANALYSIS_PROMPT,
+      );
+
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return;
+
+      const result = JSON.parse(jsonMatch[0]) as { is_important: boolean; content?: string };
+      if (!result.is_important || !result.content?.trim()) return;
+
+      await this.contextService.appendAutoGlobalContext(params.accountId, result.content.trim());
+      logger.info(`[LearningService] Global context updated for account ${params.accountId}`);
+    } catch (err) {
+      logger.warn(`[LearningService] maybeUpdateGlobalContext error: ${(err as Error).message}`);
+    }
   }
 }

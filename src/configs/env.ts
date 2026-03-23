@@ -21,6 +21,27 @@ const envSchema = z.object({
   // JWT
   JWT_SECRET: z.string().min(8),
   JWT_EXPIRES_IN_DAY: z.string().transform(Number),
+
+  // Google OAuth (optional — only needed for Google Workspace integration)
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_REDIRECT_URI: z.string().optional(),
+
+  // Instagram Graph API (optional — needed for content publishing)
+  INSTAGRAM_ACCESS_TOKEN: z.string().optional(),
+  INSTAGRAM_BUSINESS_ACCOUNT_ID: z.string().optional(),
+
+  // Threads (optional — separate access token with threads_basic + threads_content_publish scope)
+  THREADS_USER_ID: z.string().optional(),
+  THREADS_ACCESS_TOKEN: z.string().optional(),
+
+  // Supabase Storage (for content asset uploads)
+  SUPABASE_URL: z.string().optional(),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
+  SUPABASE_STORAGE_BUCKET: z.string().default("content-assets"),
+
+  // Hour (0-23, local time) at which Luna auto-generates a daily content draft
+  CONTENT_GENERATE_HOUR: z.string().default("9").transform(Number),
 });
 
 const _env = envSchema.safeParse(process.env);

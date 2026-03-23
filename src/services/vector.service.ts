@@ -145,6 +145,7 @@ export default class VectorService {
 
       const recentMessages = await SessionMessageModel.find({
         session_id: sessionId,
+        role: "user", // only user messages to avoid Luna repeating her own responses
         embedding: { $exists: true, $ne: null },
       })
         .sort({ created_at: -1 })

@@ -9,6 +9,10 @@ export const ROUTES = {
   SESSION_DETAIL: (id: string) => `/sessions/${id}`,
   CONTEXTS: "/contexts",
   TASKS: "/tasks",
+  APPS: "/apps",
+  GOOGLE_CALLBACK: "/apps/google/callback",
+  CONTENT: "/content",
+  MEDIA: "/media",
 } as const
 
 export const API = {
@@ -49,6 +53,29 @@ export const API = {
     DETAIL: (id: string) => `task/${id}`,
     DONE: (id: string) => `task/${id}/done`,
     CANCEL: (id: string) => `task/${id}/cancel`,
+  },
+  APP: {
+    LIST: "app",
+    GOOGLE_AUTH_URL: "app/google/auth-url",
+    GOOGLE_CONNECT: "app/google/connect",
+    DISCONNECT: (id: string) => `app/${id}`,
+  },
+  CONTENT: {
+    LIST: "content",
+    DETAIL: (id: string) => `content/${id}`,
+    GENERATE: "content/generate",
+    APPROVE: (id: string) => `content/${id}/approve`,
+    REJECT: (id: string) => `content/${id}/reject`,
+    REVISE: (id: string) => `content/${id}/revise`,
+    CAPTION: (id: string) => `content/${id}/caption`,
+    ASSET: (id: string) => `content/${id}/asset`,
+    ASSET_FROM_MEDIA: (id: string) => `content/${id}/asset-from-media`,
+    PUBLISH: (id: string) => `content/${id}/publish`,
+  },
+  MEDIA: {
+    LIST: "media",
+    UPLOAD: "media",
+    DELETE: (id: string) => `media/${id}`,
   },
   BOT: {
     STATUSES: "bot/statuses",

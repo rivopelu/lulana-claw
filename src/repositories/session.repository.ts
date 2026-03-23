@@ -31,6 +31,22 @@ export default class SessionRepository {
     await db.insert(SessionEntity).values(session);
   }
 
+  async findAllByAccountId(accountId: string): Promise<Session[]> {
+    const { ClientEntity } = await import("../entities/pg/client.entity");
+    const rows = await db
+      .select({ session: SessionEntity })
+      .from(SessionEntity)
+      .innerJoin(ClientEntity, eq(SessionEntity.client_id, ClientEntity.id))
+      .where(
+        and(
+          eq(ClientEntity.account_id, accountId),
+          eq(SessionEntity.active, true),
+          eq(ClientEntity.active, true),
+        ),
+      );
+    return rows.map((r) => r.session);
+  }
+
   async findAllByClientId(clientId: string): Promise<Session[]> {
     return db
       .select()

@@ -11,6 +11,8 @@ import { connectMongo } from "./database/mongo";
 import ClientRepository from "./repositories/client.repository";
 import ClientCredentialRepository from "./repositories/client-credential.repository";
 import ContextService from "./services/context.service";
+import ContentService from "./services/content.service";
+import AccountRepository from "./repositories/account.repository";
 
 const app = new Hono();
 const port = env.PORT || 8080;
@@ -72,6 +74,60 @@ async function startActiveBots(): Promise<void> {
   );
 }
 
+function startContentSchedulers(): void {
+  const contentService = new ContentService();
+  const accountRepo = new AccountRepository();
+
+  // Publish scheduler — every 60 seconds, publish due approved drafts
+  setInterval(async () => {
+    try {
+      await contentService.runPublishScheduler();
+    } catch (err) {
+      logger.error(`[ContentScheduler] Publish error: ${(err as Error).message}`);
+    }
+  }, 60_000);
+
+  // Daily generation scheduler — runs every hour, triggers at configured hour
+  let lastGeneratedDate = "";
+  setInterval(async () => {
+    const now = new Date();
+    const currentHour = now.getHours();
+    const dateKey = now.toDateString();
+    if (currentHour !== env.CONTENT_GENERATE_HOUR || dateKey === lastGeneratedDate) return;
+    lastGeneratedDate = dateKey;
+
+    try {
+      const accounts = await accountRepo.findAll();
+      logger.info(`[ContentScheduler] Daily generation for ${accounts.length} account(s)`);
+      await Promise.allSettled(
+        accounts.map((acc) => contentService.generate(acc.id).catch((e) => {
+          logger.warn(`[ContentScheduler] Skipped account ${acc.id}: ${e.message}`);
+        })),
+      );
+    } catch (err) {
+      logger.error(`[ContentScheduler] Daily generation error: ${(err as Error).message}`);
+    }
+  }, 60_000);
+
+  logger.info(`[ContentScheduler] Publish + daily generation schedulers started (generate at ${env.CONTENT_GENERATE_HOUR}:00)`);
+}
+
+async function seedGlobalContexts(): Promise<void> {
+  const contextService = new ContextService();
+  const accountRepo = new AccountRepository();
+  try {
+    const accounts = await accountRepo.findAll();
+    await Promise.allSettled(
+      accounts.map((acc) => contextService.ensureCapabilitiesContext(acc.id)),
+    );
+    if (accounts.length > 0) {
+      logger.info(`[Startup] Platform capabilities context seeded for ${accounts.length} account(s)`);
+    }
+  } catch (err) {
+    logger.warn(`[Startup] Could not seed capabilities context: ${(err as Error).message}`);
+  }
+}
+
 async function bootstrap() {
   try {
     const server = Bun.serve({
@@ -86,8 +142,10 @@ async function bootstrap() {
 
     await connectMongo();
     await new ContextService().syncAllToDisk();
+    await seedGlobalContexts();
     await startActiveBots();
     botManager.startReminderScheduler();
+    startContentSchedulers();
   } catch (error: any) {
     logger.error(`❌ Gagal: ${error.message}`);
     process.exit(1);

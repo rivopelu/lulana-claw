@@ -78,6 +78,41 @@
       "when": 1774189006438,
       "tag": "0010_dry_puff_adder",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1774250475347,
+      "tag": "0011_early_nightmare",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1774263447478,
+      "tag": "0012_hesitant_black_bolt",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1774269571919,
+      "tag": "0013_solid_invisible_woman",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1774271593633,
+      "tag": "0014_abandoned_kree",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1774276784642,
+      "tag": "0015_abnormal_puppet_master",
+      "breakpoints": true
     }
   ]
 }

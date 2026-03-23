@@ -3,17 +3,17 @@ import logger from "../configs/logger";
 
 const loggerMiddleware = async (c: Context, next: Next) => {
   const start = Date.now();
+  let status = 0;
 
   try {
     await next();
-  } catch (err) {
+    status = c.res?.status ?? 200;
+  } catch (err: any) {
+    status = err?.status ?? err?.statusCode ?? 500;
     throw err;
   } finally {
     const duration = Date.now() - start;
-    const method = c.req.method;
-    const url = c.req.url;
-    const status = c.res.status;
-    logger.info(`[${method}] ${url} - Status: ${status} - ${duration}ms`);
+    logger.info(`[${c.req.method}] ${c.req.url} - Status: ${status} - ${duration}ms`);
   }
 };
 
