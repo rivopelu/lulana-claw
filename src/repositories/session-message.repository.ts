@@ -15,6 +15,10 @@ export default class SessionMessageRepository {
     await SessionMessageModel.create(message);
   }
 
+  async countBySessionId(sessionId: string): Promise<number> {
+    return SessionMessageModel.countDocuments({ session_id: sessionId });
+  }
+
   async deleteBySessionId(sessionId: string): Promise<void> {
     await SessionMessageModel.deleteMany({ session_id: sessionId });
   }

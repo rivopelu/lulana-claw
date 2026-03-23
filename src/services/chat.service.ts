@@ -2,11 +2,12 @@ import { OpenAI } from "openai";
 import logger from "../configs/logger";
 import AiService from "./ai.service";
 import ContextService from "./context.service";
+import LearningService from "./learning.service";
 import SessionService, { type ChatType } from "./session.service";
 import TaskService, { parseRemindTime, type ResponseTask } from "./task.service";
 import VectorService from "./vector.service";
 
-const HISTORY_LIMIT = 10;
+const HISTORY_LIMIT = 20;
 const TASK_CAPABILITY_PROMPT = `
 ## SISTEM AKSI — WAJIB DIEKSEKUSI LANGSUNG
 
@@ -61,6 +62,7 @@ export interface ProcessMessageParams {
 export default class ChatService {
   private aiService = new AiService();
   private contextService = new ContextService();
+  private learningService = new LearningService();
   private sessionService = new SessionService();
   private taskService = new TaskService();
   private vectorService = new VectorService();
@@ -157,8 +159,15 @@ export default class ChatService {
       entityMode,
     );
     const nowStr = new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
+    const isGroup = chatType !== "private";
+    const groupContext = isGroup
+      ? `### KONTEKS GRUP:\nKamu sedang berada di grup chat. Pesan dari pengguna diformat sebagai [NamaPengirim]: pesan. Perhatikan baik-baik siapa yang mengatakan apa dan tujukan responmu kepada orang yang tepat. Jangan pernah mencampuradukkan identitas antar pengguna.`
+      : "";
+    const antiHallucinationInstruction = `### INSTRUKSI PENTING:\n- Jika kamu tidak tahu sesuatu, katakan dengan jujur — jangan mengarang fakta, tanggal, atau informasi yang tidak ada dalam konteks percakapan ini.\n- Jawab hanya berdasarkan informasi yang kamu miliki dari konteks dan history percakapan.`;
     const systemPrompt = [
       baseSystemPrompt,
+      groupContext,
+      antiHallucinationInstruction,
       ragContext
         ? `### LONG-TERM MEMORY (Retrieved from Database):\n${ragContext}\n*Gunakan informasi di atas jika relevan untuk menjawab pertanyaan pengguna.*`
         : "",
@@ -169,6 +178,7 @@ export default class ChatService {
       .filter(Boolean)
       .join("\n\n");
 
+    const aiText = isGroup ? `[${fromName}]: ${text}` : text;
     const rawReply = await withRetry(
       () =>
         this.aiService.chat(
@@ -176,7 +186,7 @@ export default class ChatService {
           aiModel.model_id,
           aiModel.provider,
           history.slice(0, -1),
-          text,
+          aiText,
           systemPrompt,
         ),
       label,
@@ -266,6 +276,17 @@ export default class ChatService {
       undefined,
       replyEmbedding,
     );
+
+    // Fire-and-forget: auto-learn every AUTO_LEARN_INTERVAL messages
+    this.learningService
+      .maybeAutoLearn({
+        sessionId: session.id,
+        accountId: aiModel.account_id,
+        clientId,
+        sessionName: session.name,
+        aiModel,
+      })
+      .catch((err) => logger.error(`${label} Auto-learn error: ${(err as Error).message}`));
 
     return { reply, markers: outgoingMarkers };
   }

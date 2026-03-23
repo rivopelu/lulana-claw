@@ -44,13 +44,17 @@ export default class AiService {
 
     const messages: AiMessage[] = [
       { role: "system", content: systemPrompt?.trim() || DEFAULT_SYSTEM_PROMPT },
-      ...history.map((m) => ({ role: m.role, content: m.content })),
+      ...history.map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: m.from_name && m.role === "user" ? `[${m.from_name}]: ${m.content}` : m.content,
+      })),
       { role: "user", content: userText },
     ];
 
     const response = await client.chat.completions.create({
       model: modelId,
       messages,
+      temperature: 0.7,
     });
 
     return (
@@ -77,7 +81,7 @@ export default class AiService {
       { role: "system", content: systemPrompt?.trim() || DEFAULT_SYSTEM_PROMPT },
       ...history.map((m) => ({
         role: m.role as "user" | "assistant",
-        content: m.content,
+        content: m.from_name && m.role === "user" ? `[${m.from_name}]: ${m.content}` : m.content,
       })),
       { role: "user", content: userText },
     ];
@@ -85,6 +89,7 @@ export default class AiService {
     const response = await client.chat.completions.create({
       model: modelId,
       messages,
+      temperature: 0.7,
       ...(tools.length > 0 ? { tools, tool_choice: "auto" } : {}),
     });
 

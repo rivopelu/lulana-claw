@@ -209,7 +209,7 @@ class DiscordManager {
     this.bots.set(clientId, entry);
     logger.info(`[DiscordManager] Starting bot for client ${clientId}`);
 
-    client.once("ready", () => {
+    client.once("clientReady", () => {
       entry.status = "running";
       logger.info(`[DiscordManager] Bot ${clientId} is running as ${client.user?.tag}`);
     });

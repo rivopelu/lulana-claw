@@ -36,7 +36,6 @@ export class ClientController {
         totalData: total,
       }),
     );
-    
   }
 
   @Get(":id")
