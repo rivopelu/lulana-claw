@@ -10,7 +10,9 @@
       "Bash(bunx shadcn@latest:*)",
       "Bash(bunx vite:*)",
       "Bash(grep \"\"version\"\":*)",
-      "Bash(pm2 start:*)"
+      "Bash(pm2 start:*)",
+      "Read(//mnt/**)",
+      "Read(//d//**)"
     ]
   }
 }

@@ -78,6 +78,13 @@
       "when": 1774189006438,
       "tag": "0010_dry_puff_adder",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1774250475347,
+      "tag": "0011_early_nightmare",
+      "breakpoints": true
     }
   ]
 }

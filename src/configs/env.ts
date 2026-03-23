@@ -21,6 +21,11 @@ const envSchema = z.object({
   // JWT
   JWT_SECRET: z.string().min(8),
   JWT_EXPIRES_IN_DAY: z.string().transform(Number),
+
+  // Google OAuth (optional — only needed for Google Workspace integration)
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_REDIRECT_URI: z.string().optional(),
 });
 
 const _env = envSchema.safeParse(process.env);
