@@ -85,6 +85,13 @@
       "when": 1774250475347,
       "tag": "0011_early_nightmare",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1774263447478,
+      "tag": "0012_hesitant_black_bolt",
+      "breakpoints": true
     }
   ]
 }

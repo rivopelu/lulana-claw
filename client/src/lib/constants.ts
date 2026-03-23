@@ -11,6 +11,7 @@ export const ROUTES = {
   TASKS: "/tasks",
   APPS: "/apps",
   GOOGLE_CALLBACK: "/apps/google/callback",
+  CONTENT: "/content",
 } as const
 
 export const API = {
@@ -57,6 +58,17 @@ export const API = {
     GOOGLE_AUTH_URL: "app/google/auth-url",
     GOOGLE_CONNECT: "app/google/connect",
     DISCONNECT: (id: string) => `app/${id}`,
+  },
+  CONTENT: {
+    LIST: "content",
+    DETAIL: (id: string) => `content/${id}`,
+    GENERATE: "content/generate",
+    APPROVE: (id: string) => `content/${id}/approve`,
+    REJECT: (id: string) => `content/${id}/reject`,
+    REVISE: (id: string) => `content/${id}/revise`,
+    CAPTION: (id: string) => `content/${id}/caption`,
+    ASSET: (id: string) => `content/${id}/asset`,
+    PUBLISH: (id: string) => `content/${id}/publish`,
   },
   BOT: {
     STATUSES: "bot/statuses",

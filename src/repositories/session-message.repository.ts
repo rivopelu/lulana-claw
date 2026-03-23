@@ -22,4 +22,12 @@ export default class SessionMessageRepository {
   async deleteBySessionId(sessionId: string): Promise<void> {
     await SessionMessageModel.deleteMany({ session_id: sessionId });
   }
+
+  /** Fetch the most recent messages across multiple sessions, sorted newest-first */
+  async findRecentBySessionIds(sessionIds: string[], limit = 100): Promise<ISessionMessage[]> {
+    return SessionMessageModel.find({ session_id: { $in: sessionIds } })
+      .sort({ created_at: -1 })
+      .limit(limit)
+      .lean();
+  }
 }

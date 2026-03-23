@@ -31,6 +31,10 @@ export default class AccountRepository {
     return data[0];
   }
 
+  async findAll(): Promise<Account[]> {
+    return db.select().from(AccountEntity).where(eq(AccountEntity.active, true));
+  }
+
   async save(account: NewAccount) {
     await db.insert(AccountEntity).values(account);
   }

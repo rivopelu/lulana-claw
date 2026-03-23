@@ -12,7 +12,8 @@ import { OpenRouterCallbackPage } from "@/pages/ai-models/OpenRouterCallbackPage
 import { ContextsPage } from "@/pages/contexts/ContextsPage";
 import { TasksPage } from "@/pages/tasks/TasksPage";
 import { AppsPage } from "@/pages/apps/AppsPage";
-import { GoogleCallbackPage } from "@/pages/apps/GoogleCallbackPage";
+import { GoogleCallbackPage } from "@/pages/apps/GoogleCallbackPage"
+import { ContentPage } from "@/pages/content/ContentPage";
 
 export default function App() {
   return (
@@ -37,6 +38,7 @@ export default function App() {
           <Route path="/contexts" element={<ContextsPage />} />
           <Route path="/tasks" element={<TasksPage />} />
           <Route path="/apps" element={<AppsPage />} />
+          <Route path="/content" element={<ContentPage />} />
         </Route>
       </Route>
 

@@ -6,16 +6,16 @@ import ContextService from "./context.service";
 export const AUTO_LEARN_INTERVAL = 50;
 const ANALYSIS_HISTORY_LIMIT = 200;
 
-const CONTEXT_ANALYSIS_PROMPT = `Kamu adalah sistem analisis memori percakapan. Tugasmu adalah membuat dokumen konteks yang merangkum informasi penting dari riwayat percakapan berikut, agar asisten AI bisa memahami pengguna lebih baik di masa mendatang.
+const CONTEXT_ANALYSIS_PROMPT = `You are a conversation memory analysis system. Your task is to produce a context document summarizing important information from the following conversation history, so the AI assistant can better understand the user in future interactions.
 
-Sertakan bagian-bagian berikut jika relevan:
-1. **Informasi Pengguna** — nama, pekerjaan, lokasi, peran, atau fakta pribadi yang disebutkan
-2. **Topik & Proyek Aktif** — hal-hal yang sedang dikerjakan atau sering dibahas
-3. **Preferensi & Kebiasaan** — gaya komunikasi, bahasa yang disukai, pola permintaan
-4. **Pengetahuan Penting** — keputusan, informasi teknis, atau konteks yang perlu diingat
-5. **Pola Interaksi** — bagaimana pengguna biasanya meminta bantuan
+Include the following sections where relevant:
+1. **User Information** — name, occupation, location, role, or personal facts mentioned
+2. **Active Topics & Projects** — things currently being worked on or frequently discussed
+3. **Preferences & Habits** — communication style, preferred language, common request patterns
+4. **Key Knowledge** — decisions made, technical context, or background that should be remembered
+5. **Interaction Patterns** — how the user typically asks for help
 
-Tulis dalam format markdown yang ringkas dan terstruktur. Hilangkan informasi yang tidak relevan atau basi. Fokus pada hal yang akan membuat asisten lebih personal dan relevan.`.trim();
+Write in concise, structured markdown. Omit irrelevant or stale information. Focus on what will make the assistant more personalized and relevant.`.trim();
 
 export interface AutoLearnParams {
   sessionId: string;

@@ -11,6 +11,19 @@ export const api = ky.create({
         }
       },
     ],
+    beforeError: [
+      async (error) => {
+        try {
+          const body = await error.response.clone().json() as { message?: string }
+          if (body?.message) {
+            error.message = body.message
+          }
+        } catch {
+          // keep original message if body isn't JSON
+        }
+        return error
+      },
+    ],
   },
   retry: 0,
   timeout: 30_000,

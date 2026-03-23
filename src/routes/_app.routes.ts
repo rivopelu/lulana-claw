@@ -10,6 +10,7 @@ import { SessionController } from "../controllers/session.controller";
 import { ContextController } from "../controllers/context.controller";
 import { TaskController } from "../controllers/task.controller";
 import { AppController } from "../controllers/app.controller";
+import { ContentController } from "../controllers/content.controller";
 
 const appRoutes = new Hono();
 
@@ -24,6 +25,7 @@ const controllers = [
   ContextController,
   TaskController,
   AppController,
+  ContentController,
 ];
 
 registerControllers(controllers, appRoutes);
