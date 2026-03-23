@@ -350,11 +350,12 @@ export default class ContentService {
     hashtags: string[],
     assetType: "image" | "video",
   ): Promise<string> {
-    const accessToken = env.INSTAGRAM_ACCESS_TOKEN;
-    const accountId = env.INSTAGRAM_BUSINESS_ACCOUNT_ID;
+    // Trim to remove any accidental whitespace / newline from .env
+    const accessToken = env.INSTAGRAM_ACCESS_TOKEN?.trim();
+    const igUserId = env.INSTAGRAM_BUSINESS_ACCOUNT_ID?.trim();
 
-    if (!accessToken || !accountId) {
-      throw new BadRequestException(
+    if (!accessToken || !igUserId) {
+      throw new Error(
         "Instagram credentials not configured (INSTAGRAM_ACCESS_TOKEN, INSTAGRAM_BUSINESS_ACCOUNT_ID)",
       );
     }
@@ -363,43 +364,93 @@ export default class ContentService {
       .join("\n")
       .trim();
 
-    // Step 1: Create media container
-    const createParams = new URLSearchParams({
-      caption: fullCaption,
-      access_token: accessToken,
-    });
-
+    // Step 1: Create media container — send all params as JSON body with Bearer header
+    const createBody: Record<string, string> = { caption: fullCaption };
     if (assetType === "video") {
-      createParams.set("media_type", "REELS");
-      createParams.set("video_url", assetUrl);
+      createBody.media_type = "REELS";
+      createBody.video_url = assetUrl;
     } else {
-      createParams.set("image_url", assetUrl);
+      createBody.image_url = assetUrl;
     }
 
-    const createRes = await fetch(
-      `https://graph.facebook.com/v19.0/${accountId}/media`,
-      { method: "POST", body: createParams },
+    const createData = await this.igPost<{ id?: string; error?: { message: string; code?: number; is_transient?: boolean } }>(
+      `https://graph.instagram.com/v21.0/${igUserId}/media`,
+      accessToken,
+      createBody,
     );
-    const createData = (await createRes.json()) as { id?: string; error?: { message: string } };
     if (!createData.id) {
-      throw new Error(`Instagram create media failed: ${createData.error?.message ?? "unknown"}`);
+      logger.error(`[Instagram] Create media response: ${JSON.stringify(createData)}`);
+      throw new Error(`Instagram create media failed: ${createData.error?.message ?? JSON.stringify(createData)}`);
     }
 
-    // Step 2: Publish the container
-    const publishParams = new URLSearchParams({
-      creation_id: createData.id,
-      access_token: accessToken,
-    });
+    logger.info(`[Instagram] Media container created: ${createData.id}`);
 
-    const publishRes = await fetch(
-      `https://graph.facebook.com/v19.0/${accountId}/media_publish`,
-      { method: "POST", body: publishParams },
+    // Step 2: Wait until container status = FINISHED
+    await this.waitForContainer(createData.id, accessToken);
+
+    // Step 3: Publish the container
+    const publishData = await this.igPost<{ id?: string; error?: { message: string; is_transient?: boolean } }>(
+      `https://graph.instagram.com/v21.0/${igUserId}/media_publish`,
+      accessToken,
+      { creation_id: createData.id },
     );
-    const publishData = (await publishRes.json()) as { id?: string; error?: { message: string } };
     if (!publishData.id) {
-      throw new Error(`Instagram publish failed: ${publishData.error?.message ?? "unknown"}`);
+      logger.error(`[Instagram] Publish response: ${JSON.stringify(publishData)}`);
+      throw new Error(`Instagram publish failed: ${publishData.error?.message ?? JSON.stringify(publishData)}`);
     }
 
+    logger.info(`[Instagram] Published successfully: ${publishData.id}`);
     return publishData.id;
+  }
+
+  /** Poll media container status until FINISHED (max 60s) */
+  private async waitForContainer(containerId: string, accessToken: string): Promise<void> {
+    const maxAttempts = 12; // 12 × 5s = 60s max
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      await new Promise((r) => setTimeout(r, 5000));
+
+      const res = await fetch(
+        `https://graph.instagram.com/v21.0/${containerId}?fields=status_code,status`,
+        { headers: { "Authorization": `Bearer ${accessToken}` } },
+      );
+      const data = (await res.json()) as { status_code?: string; status?: string; error?: { message: string } };
+
+      logger.info(`[Instagram] Container ${containerId} status: ${data.status_code} (attempt ${attempt}/${maxAttempts})`);
+
+      if (data.status_code === "FINISHED") return;
+      if (data.status_code === "ERROR" || data.status_code === "EXPIRED") {
+        throw new Error(`Media container ${data.status_code?.toLowerCase()}: ${data.status ?? "unknown reason"}`);
+      }
+      // IN_PROGRESS → continue polling
+    }
+    throw new Error("Media container did not finish processing within 60 seconds");
+  }
+
+  /** POST to Instagram Graph API with automatic retry on transient errors */
+  private async igPost<T>(url: string, accessToken: string, body: Record<string, string>): Promise<T> {
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+      const data = (await res.json()) as T & { error?: { is_transient?: boolean; code?: number } };
+
+      const isTransient = data.error?.is_transient || data.error?.code === 2;
+      if (data.error && isTransient && attempt < maxAttempts) {
+        const delay = attempt * 3000;
+        logger.warn(`[Instagram] Transient error on attempt ${attempt}/${maxAttempts}, retrying in ${delay}ms...`);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+
+      return data as T;
+    }
+    // Should not reach here
+    throw new Error("Instagram API: max retries exceeded");
   }
 }
