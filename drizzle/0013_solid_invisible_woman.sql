@@ -1,0 +1,1 @@
+ALTER TABLE "content_draft" ADD COLUMN "threads_post_id" varchar(255);

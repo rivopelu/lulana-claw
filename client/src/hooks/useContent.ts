@@ -26,11 +26,16 @@ export function useContentDraft(id: string) {
 export function useGenerateDraft() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (aiModelId?: string) =>
-      apiPost<BaseResponse<ContentDraft>>(API.CONTENT.GENERATE, { ai_model_id: aiModelId }),
+    mutationFn: ({ aiModelId, customPrompt }: { aiModelId?: string; customPrompt?: string } = {}) =>
+      apiPost<BaseResponse<ContentDraft>>(API.CONTENT.GENERATE, {
+        ai_model_id: aiModelId,
+        custom_prompt: customPrompt,
+      }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["content"] }),
   })
 }
+
+export type PublishPlatform = "instagram" | "threads"
 
 export function useApproveDraft() {
   const qc = useQueryClient()
@@ -39,11 +44,13 @@ export function useApproveDraft() {
       id,
       scheduled_at,
       publish_now,
+      platforms,
     }: {
       id: string
       scheduled_at?: number
       publish_now?: boolean
-    }) => apiPut<BaseResponse<ContentDraft>>(API.CONTENT.APPROVE(id), { scheduled_at, publish_now }),
+      platforms?: PublishPlatform[]
+    }) => apiPut<BaseResponse<ContentDraft>>(API.CONTENT.APPROVE(id), { scheduled_at, publish_now, platforms }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["content"] }),
   })
 }
@@ -96,8 +103,8 @@ export function useUploadAsset() {
 export function usePublishDraft() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) =>
-      apiPost<BaseResponse<ContentDraft>>(API.CONTENT.PUBLISH(id), {}),
+    mutationFn: ({ id, platforms }: { id: string; platforms?: PublishPlatform[] }) =>
+      apiPost<BaseResponse<ContentDraft>>(API.CONTENT.PUBLISH(id), { platforms }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["content"] }),
   })
 }

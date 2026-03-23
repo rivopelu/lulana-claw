@@ -15,6 +15,7 @@ export interface ContentDraft {
   asset_type: ContentAssetType | null
   revision_notes: string | null
   ig_post_id: string | null
+  threads_post_id: string | null
   published_at: number | null
   created_date: number
 }

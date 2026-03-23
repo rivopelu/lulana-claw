@@ -37,7 +37,7 @@ export class ContentController {
   async generate(c: Context) {
     const accountId = getAccountId(c);
     const body = await c.req.json().catch(() => ({}));
-    const draft = await this.contentService.generate(accountId, body.ai_model_id);
+    const draft = await this.contentService.generate(accountId, body.ai_model_id, body.custom_prompt);
     return c.json(responseHelper.data(draft), 201);
   }
 
@@ -51,6 +51,7 @@ export class ContentController {
       accountId,
       body.scheduled_at,
       body.publish_now === true,
+      Array.isArray(body.platforms) ? body.platforms : undefined,
     );
     return c.json(responseHelper.data(draft));
   }
@@ -111,7 +112,9 @@ export class ContentController {
   async publish(c: Context) {
     const id = c.req.param("id");
     const accountId = getAccountId(c);
-    const draft = await this.contentService.publish(id, accountId);
+    const body = await c.req.json().catch(() => ({}));
+    const platforms = Array.isArray(body.platforms) ? body.platforms : undefined;
+    const draft = await this.contentService.publish(id, accountId, platforms);
     return c.json(responseHelper.data(draft));
   }
 

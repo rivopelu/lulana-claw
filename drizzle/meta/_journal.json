@@ -92,6 +92,13 @@
       "when": 1774263447478,
       "tag": "0012_hesitant_black_bolt",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1774269571919,
+      "tag": "0013_solid_invisible_woman",
+      "breakpoints": true
     }
   ]
 }

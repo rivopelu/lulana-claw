@@ -55,6 +55,7 @@ import {
   useUploadAsset,
   usePublishDraft,
   useDeleteDraft,
+  type PublishPlatform,
 } from "@/hooks/useContent"
 import type { ContentDraft, ContentDraftStatus } from "@/types/content"
 
@@ -80,10 +81,11 @@ function GenerateDialog({
   const { data: models = [] } = useAiModels()
   const generate = useGenerateDraft()
   const [selectedModelId, setSelectedModelId] = useState<string>("__auto__")
+  const [customPrompt, setCustomPrompt] = useState("")
 
   const handleGenerate = () => {
-    const modelId = selectedModelId === "__auto__" ? undefined : selectedModelId
-    generate.mutate(modelId, { onSuccess: onClose })
+    const aiModelId = selectedModelId === "__auto__" ? undefined : selectedModelId
+    generate.mutate({ aiModelId, customPrompt: customPrompt.trim() || undefined }, { onSuccess: onClose })
   }
 
   return (
@@ -126,6 +128,19 @@ function GenerateDialog({
               </Select>
             )}
           </div>
+          <div className="space-y-1.5">
+            <Label>Instruksi Khusus <span className="text-muted-foreground font-normal">(opsional)</span></Label>
+            <Textarea
+              placeholder="Contoh: buat konten tentang momen sore hari yang tenang, atau tips produktivitas untuk hari Senin..."
+              value={customPrompt}
+              onChange={(e) => setCustomPrompt(e.target.value)}
+              rows={3}
+              className="resize-none text-sm"
+            />
+            <p className="text-xs text-muted-foreground">
+              Beri arahan spesifik ke Luna — tema, topik, suasana, atau referensi konten.
+            </p>
+          </div>
           {generate.error && (
             <p className="text-xs text-destructive">
               {(generate.error as Error).message}
@@ -153,6 +168,58 @@ function GenerateDialog({
 
 type ApproveMode = "now" | "schedule" | "approve_only"
 
+function PlatformToggle({
+  hasAsset,
+  value,
+  onChange,
+}: {
+  hasAsset: boolean
+  value: PublishPlatform[]
+  onChange: (v: PublishPlatform[]) => void
+}) {
+  const toggle = (p: PublishPlatform) =>
+    onChange(value.includes(p) ? value.filter((x) => x !== p) : [...value, p])
+
+  return (
+    <div className="space-y-1.5">
+      <Label>Platform</Label>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => toggle("threads")}
+          className={[
+            "flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors",
+            value.includes("threads")
+              ? "border-[#101010] bg-[#101010] text-white"
+              : "border-border text-muted-foreground",
+          ].join(" ")}
+        >
+          <svg className="h-3.5 w-3.5" viewBox="0 0 192 192" fill="currentColor">
+            <path d="M141.537 88.988a66.667 66.667 0 0 0-2.518-1.143c-1.482-27.307-16.403-43.038-41.457-43.198h-.368c-14.995 0-27.vissé.57 8.502l8.96 5.928c5.846-7.847 14.579-9.47 20.952-9.47h.252c8.101.051 14.22 2.408 18.196 7.01 2.87 3.348 4.797 7.994 5.756 13.868a94.848 94.848 0 0 0-12.294-1.004c-12.6 0-22.994 3.407-30.214 9.854-8.243 7.28-12.45 17.918-11.955 29.91.842 20.547 17.037 32.966 37.903 32.966 10.582 0 19.774-2.755 26.663-7.97 8.367-6.374 13.024-15.987 13.863-28.574.345-5.098.234-9.883-.325-14.264l-.041-.305Zm-27.165 38.108c-5.4 4.178-12.512 6.308-21.138 6.308-11.876 0-20.126-6.278-20.547-16.188-.28-6.553 2.417-12.146 7.584-15.756 4.995-3.5 11.93-5.273 20.016-5.273 4.474 0 8.898.37 13.176 1.092.44 5.706.138 10.56-1.09 14.817Z"/>
+          </svg>
+          Threads
+        </button>
+        <button
+          type="button"
+          disabled={!hasAsset}
+          onClick={() => hasAsset && toggle("instagram")}
+          className={[
+            "flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors",
+            value.includes("instagram")
+              ? "border-pink-500 bg-gradient-to-r from-pink-500 to-purple-600 text-white"
+              : "border-border text-muted-foreground",
+            !hasAsset && "opacity-40 cursor-not-allowed",
+          ].join(" ")}
+        >
+          <Instagram className="h-3.5 w-3.5" />
+          Instagram
+          {!hasAsset && <span className="ml-1 opacity-70">(butuh asset)</span>}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function ApproveDialog({
   draft,
   onClose,
@@ -164,18 +231,27 @@ function ApproveDialog({
   const [mode, setMode] = useState<ApproveMode>("approve_only")
   const [schedDate, setSchedDate] = useState("")
   const [schedTime, setSchedTime] = useState("")
+  const hasAsset = !!draft?.asset_url
+  const defaultPlatforms: PublishPlatform[] = hasAsset ? ["threads", "instagram"] : ["threads"]
+  const [platforms, setPlatforms] = useState<PublishPlatform[]>(defaultPlatforms)
+
+  // Reset platforms when draft changes
+  const prevDraftId = draft?.id
+  if (draft?.id !== prevDraftId) {
+    setPlatforms(hasAsset ? ["threads", "instagram"] : ["threads"])
+  }
 
   const handleApprove = () => {
     if (!draft) return
     if (mode === "now") {
-      approve.mutate({ id: draft.id, publish_now: true }, { onSuccess: onClose })
+      approve.mutate({ id: draft.id, publish_now: true, platforms }, { onSuccess: onClose })
       return
     }
     let scheduledAt: number | undefined
     if (mode === "schedule" && schedDate) {
       scheduledAt = new Date(`${schedDate}T${schedTime || "00:00"}`).getTime()
     }
-    approve.mutate({ id: draft.id, scheduled_at: scheduledAt }, { onSuccess: onClose })
+    approve.mutate({ id: draft.id, scheduled_at: scheduledAt, platforms }, { onSuccess: onClose })
   }
 
   const canSubmit =
@@ -237,10 +313,15 @@ function ApproveDialog({
             </div>
           )}
 
-          {/* "now" warning if no asset */}
-          {mode === "now" && !draft?.asset_url && (
+          {/* Platform selector — shown for now + schedule modes */}
+          {(mode === "now" || mode === "schedule") && (
+            <PlatformToggle hasAsset={hasAsset} value={platforms} onChange={setPlatforms} />
+          )}
+
+          {/* Warning: no asset but instagram selected */}
+          {mode === "now" && !hasAsset && platforms.includes("instagram") && (
             <p className="rounded bg-orange-50 border border-orange-200 px-3 py-2 text-xs text-orange-700">
-              Belum ada asset yang di-upload. Upload foto/video dulu sebelum publish.
+              Belum ada asset. Instagram membutuhkan foto/video.
             </p>
           )}
 
@@ -254,7 +335,12 @@ function ApproveDialog({
           </Button>
           <Button
             onClick={handleApprove}
-            disabled={approve.isPending || !canSubmit || (mode === "now" && !draft?.asset_url)}
+            disabled={
+            approve.isPending ||
+            !canSubmit ||
+            platforms.length === 0 ||
+            (platforms.includes("instagram") && !hasAsset)
+          }
           >
             {submitLabel()}
           </Button>
@@ -500,10 +586,18 @@ function DraftCard({
           </div>
         )}
 
-        {draft.ig_post_id && (
-          <div className="flex items-center gap-1 text-xs text-green-600">
-            <Instagram className="h-3 w-3" />
-            Post ID: {draft.ig_post_id}
+        {(draft.ig_post_id || draft.threads_post_id) && (
+          <div className="flex items-center gap-2 flex-wrap">
+            {draft.threads_post_id && (
+              <span className="flex items-center gap-1 text-xs text-green-600">
+                <span className="font-bold">T</span> {draft.threads_post_id.slice(-8)}
+              </span>
+            )}
+            {draft.ig_post_id && (
+              <span className="flex items-center gap-1 text-xs text-pink-600">
+                <Instagram className="h-3 w-3" /> {draft.ig_post_id.slice(-8)}
+              </span>
+            )}
           </div>
         )}
 
@@ -553,15 +647,24 @@ function DraftCard({
             </Button>
           )}
 
-          {draft.status === "approved" && draft.asset_url && (
+          {draft.status === "approved" && (
             <Button
               size="sm"
               className="h-7 text-xs"
-              onClick={() => publishDraft.mutate(draft.id)}
+              onClick={() => {
+                const platforms: PublishPlatform[] = draft.asset_url
+                  ? ["threads", "instagram"]
+                  : ["threads"]
+                publishDraft.mutate({ id: draft.id, platforms })
+              }}
               disabled={publishDraft.isPending}
             >
               <Send className="h-3 w-3 mr-1" />
-              {publishDraft.isPending ? "Publishing..." : "Publish Now"}
+              {publishDraft.isPending
+                ? "Publishing..."
+                : draft.asset_url
+                  ? "Threads + IG"
+                  : "Post ke Threads"}
             </Button>
           )}
 

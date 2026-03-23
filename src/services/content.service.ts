@@ -11,6 +11,8 @@ import logger from "../configs/logger";
 
 export type ContentDraftStatus = "pending" | "approved" | "rejected" | "revised" | "published";
 
+export type PublishPlatform = "instagram" | "threads";
+
 export interface ResponseContentDraft {
   id: string;
   account_id: string;
@@ -25,6 +27,7 @@ export interface ResponseContentDraft {
   asset_type: "image" | "video" | null;
   revision_notes: string | null;
   ig_post_id: string | null;
+  threads_post_id: string | null;
   published_at: number | null;
   created_date: number;
 }
@@ -44,6 +47,7 @@ function toResponse(d: ContentDraft): ResponseContentDraft {
     asset_type: (d.asset_type as "image" | "video" | null) ?? null,
     revision_notes: d.revision_notes ?? null,
     ig_post_id: d.ig_post_id ?? null,
+    threads_post_id: d.threads_post_id ?? null,
     published_at: d.published_at ?? null,
     created_date: d.created_date,
   };
@@ -73,7 +77,7 @@ export default class ContentService {
   private messageRepository = new SessionMessageRepository();
   private aiService = new AiService();
 
-  async generate(accountId: string, aiModelId?: string): Promise<ResponseContentDraft> {
+  async generate(accountId: string, aiModelId?: string, customPrompt?: string): Promise<ResponseContentDraft> {
     // Find the AI model to use
     let model;
     if (aiModelId) {
@@ -87,7 +91,7 @@ export default class ContentService {
     }
 
     // Build chat history context from Luna's recent conversations
-    const chatContext = await this.buildChatContext(accountId);
+    const chatContext = await this.buildChatContext(accountId, customPrompt);
 
     let raw: string;
     try {
@@ -158,6 +162,7 @@ export default class ContentService {
     accountId: string,
     scheduledAt?: number,
     publishNow = false,
+    platforms?: PublishPlatform[],
   ): Promise<ResponseContentDraft> {
     const draft = await this.repository.findByIdAndAccountId(id, accountId);
     if (!draft) throw new NotFoundException("Content draft not found");
@@ -170,8 +175,7 @@ export default class ContentService {
     });
 
     if (publishNow) {
-      // publish_now: approve then immediately publish in one step
-      return this.publish(id, accountId);
+      return this.publish(id, accountId, platforms);
     }
 
     const updated = await this.repository.findById(id);
@@ -235,29 +239,68 @@ export default class ContentService {
     return toResponse(updated!);
   }
 
-  async publish(id: string, accountId: string): Promise<ResponseContentDraft> {
+  async publish(
+    id: string,
+    accountId: string,
+    platforms?: PublishPlatform[],
+  ): Promise<ResponseContentDraft> {
     const draft = await this.repository.findByIdAndAccountId(id, accountId);
     if (!draft) throw new NotFoundException("Content draft not found");
     if (draft.status !== "approved")
       throw new BadRequestException("Only approved drafts can be published");
-    if (!draft.asset_url)
-      throw new BadRequestException("Upload an image or video asset before publishing");
 
-    let igPostId: string;
-    try {
-      igPostId = await this.publishToInstagram(draft.asset_url, draft.caption, draft.hashtags as string[], draft.asset_type ?? "image");
-    } catch (err: any) {
-      throw new BadRequestException(`Instagram publish failed: ${err.message}`);
+    const hasAsset = !!draft.asset_url;
+    const hashtags = (draft.hashtags as string[]) ?? [];
+
+    // Determine platforms: default = threads always + instagram if asset exists
+    const targets: PublishPlatform[] = platforms?.length
+      ? platforms
+      : hasAsset
+        ? ["threads", "instagram"]
+        : ["threads"];
+
+    if (targets.includes("instagram") && !hasAsset) {
+      throw new BadRequestException("Upload asset terlebih dahulu sebelum publish ke Instagram");
     }
 
-    await this.repository.update(id, {
+    const updates: Record<string, unknown> = {
       status: "published",
-      ig_post_id: igPostId,
       published_at: Date.now(),
       updated_by: accountId,
       updated_date: Date.now(),
-    });
+    };
 
+    if (targets.includes("threads")) {
+      try {
+        const threadsId = await this.publishToThreads(
+          draft.caption,
+          hashtags,
+          hasAsset ? draft.asset_url! : undefined,
+          hasAsset ? (draft.asset_type ?? "image") : undefined,
+        );
+        updates.threads_post_id = threadsId;
+        logger.info(`[Publish] Threads ✅ ${threadsId}`);
+      } catch (err: any) {
+        throw new BadRequestException(`Threads publish failed: ${err.message}`);
+      }
+    }
+
+    if (targets.includes("instagram")) {
+      try {
+        const igId = await this.publishToInstagram(
+          draft.asset_url!,
+          draft.caption,
+          hashtags,
+          draft.asset_type ?? "image",
+        );
+        updates.ig_post_id = igId;
+        logger.info(`[Publish] Instagram ✅ ${igId}`);
+      } catch (err: any) {
+        throw new BadRequestException(`Instagram publish failed: ${err.message}`);
+      }
+    }
+
+    await this.repository.update(id, updates as any);
     const updated = await this.repository.findById(id);
     return toResponse(updated!);
   }
@@ -312,12 +355,82 @@ export default class ContentService {
     );
   }
 
+  private async publishToThreads(
+    caption: string,
+    hashtags: string[],
+    assetUrl?: string,
+    assetType?: "image" | "video",
+  ): Promise<string> {
+    const accessToken = (env.THREADS_ACCESS_TOKEN ?? env.INSTAGRAM_ACCESS_TOKEN)?.trim();
+    // Threads user ID: use dedicated env or fall back to Instagram user ID
+    const threadsUserId = (env.THREADS_USER_ID ?? env.INSTAGRAM_BUSINESS_ACCOUNT_ID)?.trim();
+
+    if (!accessToken || !threadsUserId) {
+      throw new Error(
+        "Threads credentials not configured (THREADS_ACCESS_TOKEN + THREADS_USER_ID)",
+      );
+    }
+
+    const hashtagStr = hashtags.map((h) => `#${h}`).join(" ");
+    const combined = `${caption}\n\n${hashtagStr}`.trim();
+    const fullText = combined.length <= 500 ? combined : caption.slice(0, 497).trimEnd() + "…";
+
+    // Step 1: Create container
+    const containerBody: Record<string, string> = { text: fullText };
+    if (assetUrl && assetType === "video") {
+      containerBody.media_type = "VIDEO";
+      containerBody.video_url = assetUrl;
+    } else if (assetUrl) {
+      containerBody.media_type = "IMAGE";
+      containerBody.image_url = assetUrl;
+    } else {
+      containerBody.media_type = "TEXT";
+    }
+
+    const createData = await this.igPost<{ id?: string; error?: { message: string; is_transient?: boolean } }>(
+      `https://graph.threads.net/v1.0/${threadsUserId}/threads`,
+      accessToken,
+      containerBody,
+    );
+    if (!createData.id) {
+      logger.error(`[Threads] Create container response: ${JSON.stringify(createData)}`);
+      throw new Error(`Threads create container failed: ${createData.error?.message ?? JSON.stringify(createData)}`);
+    }
+
+    logger.info(`[Threads] Container created: ${createData.id}`);
+
+    // Step 2: Poll until FINISHED (only needed for media; text posts are instant)
+    if (assetUrl) {
+      await this.waitForContainer(createData.id, accessToken, "threads");
+    }
+
+    // Step 3: Publish
+    const publishData = await this.igPost<{ id?: string; error?: { message: string } }>(
+      `https://graph.threads.net/v1.0/${threadsUserId}/threads_publish`,
+      accessToken,
+      { creation_id: createData.id },
+    );
+    if (!publishData.id) {
+      logger.error(`[Threads] Publish response: ${JSON.stringify(publishData)}`);
+      throw new Error(`Threads publish failed: ${publishData.error?.message ?? JSON.stringify(publishData)}`);
+    }
+
+    logger.info(`[Threads] Published: ${publishData.id}`);
+    return publishData.id;
+  }
+
   /** Fetch recent Luna conversations and build a context string for content generation */
-  private async buildChatContext(accountId: string): Promise<string> {
+  private async buildChatContext(accountId: string, customPrompt?: string): Promise<string> {
+    const instruction = customPrompt?.trim()
+      ? `\n\nInstruksi khusus dari pengguna: ${customPrompt.trim()}`
+      : "\n\nBerdasarkan percakapan di atas, buat konten Instagram hari ini dari sudut pandang Luna.";
+
     try {
       const sessions = await this.sessionRepository.findAllByAccountId(accountId);
       if (sessions.length === 0) {
-        return "Belum ada percakapan sebelumnya. Buat konten perkenalan dirimu sebagai Luna.";
+        return customPrompt?.trim()
+          ? `Instruksi khusus dari pengguna: ${customPrompt.trim()}`
+          : "Belum ada percakapan sebelumnya. Buat konten perkenalan dirimu sebagai Luna.";
       }
 
       const sessionIds = sessions.map((s) => s.id);
@@ -326,7 +439,9 @@ export default class ContentService {
       messages.reverse();
 
       if (messages.length === 0) {
-        return "Belum ada percakapan sebelumnya. Buat konten perkenalan dirimu sebagai Luna.";
+        return customPrompt?.trim()
+          ? `Instruksi khusus dari pengguna: ${customPrompt.trim()}`
+          : "Belum ada percakapan sebelumnya. Buat konten perkenalan dirimu sebagai Luna.";
       }
 
       const transcript = messages
@@ -337,10 +452,12 @@ export default class ContentService {
         })
         .join("\n");
 
-      return `Berikut adalah cuplikan percakapan terbaru Luna dengan para penggunanya:\n\n${transcript}\n\nBerdasarkan percakapan di atas, buat konten Instagram hari ini dari sudut pandang Luna.`;
+      return `Berikut adalah cuplikan percakapan terbaru Luna dengan para penggunanya:\n\n${transcript}${instruction}`;
     } catch (err) {
       logger.warn(`[ContentService] Could not fetch chat history: ${(err as Error).message}`);
-      return "Buat konten Instagram hari ini dari sudut pandang Luna.";
+      return customPrompt?.trim()
+        ? `Instruksi khusus dari pengguna: ${customPrompt.trim()}`
+        : "Buat konten Instagram hari ini dari sudut pandang Luna.";
     }
   }
 
@@ -386,7 +503,7 @@ export default class ContentService {
     logger.info(`[Instagram] Media container created: ${createData.id}`);
 
     // Step 2: Wait until container status = FINISHED
-    await this.waitForContainer(createData.id, accessToken);
+    await this.waitForContainer(createData.id, accessToken, "instagram");
 
     // Step 3: Publish the container
     const publishData = await this.igPost<{ id?: string; error?: { message: string; is_transient?: boolean } }>(
@@ -404,13 +521,20 @@ export default class ContentService {
   }
 
   /** Poll media container status until FINISHED (max 60s) */
-  private async waitForContainer(containerId: string, accessToken: string): Promise<void> {
+  private async waitForContainer(
+    containerId: string,
+    accessToken: string,
+    platform: "instagram" | "threads" = "instagram",
+  ): Promise<void> {
+    const baseUrl = platform === "threads"
+      ? `https://graph.threads.net/v1.0`
+      : `https://graph.instagram.com/v21.0`;
     const maxAttempts = 12; // 12 × 5s = 60s max
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       await new Promise((r) => setTimeout(r, 5000));
 
       const res = await fetch(
-        `https://graph.instagram.com/v21.0/${containerId}?fields=status_code,status`,
+        `${baseUrl}/${containerId}?fields=status_code,status`,
         { headers: { "Authorization": `Bearer ${accessToken}` } },
       );
       const data = (await res.json()) as { status_code?: string; status?: string; error?: { message: string } };

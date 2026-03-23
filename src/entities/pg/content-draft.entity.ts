@@ -34,6 +34,8 @@ export const ContentDraftEntity = pgTable("content_draft", {
   revision_notes: text("revision_notes"),
   /** Instagram post ID after successful publish */
   ig_post_id: varchar("ig_post_id", { length: 255 }),
+  /** Threads post ID after successful publish */
+  threads_post_id: varchar("threads_post_id", { length: 255 }),
   published_at: bigint("published_at", { mode: "number" }),
   ...baseEntity,
 });
