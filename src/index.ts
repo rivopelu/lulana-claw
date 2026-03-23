@@ -112,6 +112,22 @@ function startContentSchedulers(): void {
   logger.info(`[ContentScheduler] Publish + daily generation schedulers started (generate at ${env.CONTENT_GENERATE_HOUR}:00)`);
 }
 
+async function seedGlobalContexts(): Promise<void> {
+  const contextService = new ContextService();
+  const accountRepo = new AccountRepository();
+  try {
+    const accounts = await accountRepo.findAll();
+    await Promise.allSettled(
+      accounts.map((acc) => contextService.ensureCapabilitiesContext(acc.id)),
+    );
+    if (accounts.length > 0) {
+      logger.info(`[Startup] Platform capabilities context seeded for ${accounts.length} account(s)`);
+    }
+  } catch (err) {
+    logger.warn(`[Startup] Could not seed capabilities context: ${(err as Error).message}`);
+  }
+}
+
 async function bootstrap() {
   try {
     const server = Bun.serve({
@@ -126,6 +142,7 @@ async function bootstrap() {
 
     await connectMongo();
     await new ContextService().syncAllToDisk();
+    await seedGlobalContexts();
     await startActiveBots();
     botManager.startReminderScheduler();
     startContentSchedulers();

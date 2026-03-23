@@ -33,3 +33,14 @@ export async function uploadToSupabase(
   const { data } = client.storage.from(bucket).getPublicUrl(filename);
   return data.publicUrl;
 }
+
+/**
+ * Delete a file from Supabase Storage by its storage path.
+ */
+export async function deleteFromSupabase(storagePath: string): Promise<void> {
+  const client = getClient();
+  const { error } = await client.storage.from(env.SUPABASE_STORAGE_BUCKET).remove([storagePath]);
+  if (error) {
+    throw new BadRequestException(`Supabase delete failed: ${error.message}`);
+  }
+}

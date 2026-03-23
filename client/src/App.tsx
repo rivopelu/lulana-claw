@@ -14,6 +14,7 @@ import { TasksPage } from "@/pages/tasks/TasksPage";
 import { AppsPage } from "@/pages/apps/AppsPage";
 import { GoogleCallbackPage } from "@/pages/apps/GoogleCallbackPage"
 import { ContentPage } from "@/pages/content/ContentPage";
+import { MediaPage } from "@/pages/media/MediaPage";
 
 export default function App() {
   return (
@@ -39,6 +40,7 @@ export default function App() {
           <Route path="/tasks" element={<TasksPage />} />
           <Route path="/apps" element={<AppsPage />} />
           <Route path="/content" element={<ContentPage />} />
+          <Route path="/media" element={<MediaPage />} />
         </Route>
       </Route>
 

@@ -131,11 +131,16 @@ class DiscordManager {
           return;
         }
 
+        // Show typing indicator — isolated so any failure doesn't block message processing
         try {
           if ("sendTyping" in message.channel) {
-            await message.channel.sendTyping();
+            await (message.channel as any).sendTyping();
           }
+        } catch {
+          /* ignore — typing indicator is cosmetic only */
+        }
 
+        try {
           const result = await this.chatService.processMessage({
             clientId,
             chatId,
@@ -147,7 +152,20 @@ class DiscordManager {
             entityMode: clientRecord?.entity_mode,
           });
 
-          await message.reply(result.reply);
+          // Discord message length limit is 2000 chars — split if needed
+          const reply = result.reply;
+          if (reply.length <= 2000) {
+            await message.reply(reply);
+          } else {
+            const chunks: string[] = [];
+            for (let i = 0; i < reply.length; i += 1900) {
+              chunks.push(reply.slice(i, i + 1900));
+            }
+            await message.reply(chunks[0]);
+            for (const chunk of chunks.slice(1)) {
+              await (message.channel as any).send(chunk);
+            }
+          }
 
           // Process Cross-Platform Markers
           if (result.markers && result.markers.length > 0) {
@@ -183,7 +201,11 @@ class DiscordManager {
           }
         } catch (err) {
           logger.error(`${label} AI error: ${(err as Error).message}`);
-          await message.reply("❌ Gagal mendapat respons. Coba lagi nanti.");
+          try {
+            await message.reply("❌ Gagal mendapat respons. Coba lagi nanti.");
+          } catch {
+            /* ignore reply failure */
+          }
         }
       });
     });

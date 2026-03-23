@@ -12,6 +12,7 @@ export const ROUTES = {
   APPS: "/apps",
   GOOGLE_CALLBACK: "/apps/google/callback",
   CONTENT: "/content",
+  MEDIA: "/media",
 } as const
 
 export const API = {
@@ -68,7 +69,13 @@ export const API = {
     REVISE: (id: string) => `content/${id}/revise`,
     CAPTION: (id: string) => `content/${id}/caption`,
     ASSET: (id: string) => `content/${id}/asset`,
+    ASSET_FROM_MEDIA: (id: string) => `content/${id}/asset-from-media`,
     PUBLISH: (id: string) => `content/${id}/publish`,
+  },
+  MEDIA: {
+    LIST: "media",
+    UPLOAD: "media",
+    DELETE: (id: string) => `media/${id}`,
   },
   BOT: {
     STATUSES: "bot/statuses",

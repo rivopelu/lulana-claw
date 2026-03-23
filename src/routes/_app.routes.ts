@@ -11,6 +11,7 @@ import { ContextController } from "../controllers/context.controller";
 import { TaskController } from "../controllers/task.controller";
 import { AppController } from "../controllers/app.controller";
 import { ContentController } from "../controllers/content.controller";
+import { MediaController } from "../controllers/media.controller";
 
 const appRoutes = new Hono();
 
@@ -26,6 +27,7 @@ const controllers = [
   TaskController,
   AppController,
   ContentController,
+  MediaController,
 ];
 
 registerControllers(controllers, appRoutes);

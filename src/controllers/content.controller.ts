@@ -4,12 +4,14 @@ import { responseHelper } from "../libs/response-helper";
 import JwtMiddleware from "../middleware/jwt-middleware";
 import { getAccountId } from "../libs/utils";
 import ContentService from "../services/content.service";
+import MediaService from "../services/media.service";
 import { uploadToSupabase } from "../libs/supabase-storage";
 
 @Controller("content")
 @Middleware([JwtMiddleware])
 export class ContentController {
   private contentService = new ContentService();
+  private mediaService = new MediaService();
 
   @Get("")
   async getAll(c: Context) {
@@ -105,6 +107,16 @@ export class ContentController {
     const publicUrl = await uploadToSupabase(await file.arrayBuffer(), filename, file.type || `${assetType}/${ext}`);
 
     const draft = await this.contentService.setAsset(id, accountId, publicUrl, assetType);
+    return c.json(responseHelper.data(draft));
+  }
+
+  @Put(":id/asset-from-media")
+  async setAssetFromMedia(c: Context) {
+    const id = c.req.param("id");
+    const accountId = getAccountId(c);
+    const body = await c.req.json();
+    const media = await this.mediaService.getById(body.media_id, accountId);
+    const draft = await this.contentService.setAsset(id, accountId, media.url, media.asset_type);
     return c.json(responseHelper.data(draft));
   }
 

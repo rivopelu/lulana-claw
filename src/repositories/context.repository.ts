@@ -87,4 +87,20 @@ export default class ContextRepository {
       active: true,
     });
   }
+
+  /** Find the auto-generated global knowledge context for an account */
+  async findAutoGlobalByAccountId(accountId: string): Promise<IContext | null> {
+    return ContextModel.findOne({
+      account_id: accountId,
+      type: "global",
+      category: "knowledge",
+      name: "auto:global",
+      active: true,
+    });
+  }
+
+  /** Find a global context by exact name for an account */
+  async findGlobalByName(accountId: string, name: string): Promise<IContext | null> {
+    return ContextModel.findOne({ account_id: accountId, type: "global", name, active: true });
+  }
 }

@@ -207,6 +207,84 @@ export default class ContextService {
     logger.info(`[ContextService] Auto context created for session ${sessionId}`);
   }
 
+  /**
+   * Append new knowledge to the auto-generated global context for an account.
+   * Creates the context if it doesn't exist yet.
+   */
+  async appendAutoGlobalContext(accountId: string, newKnowledge: string): Promise<void> {
+    const existing = await this.repository.findAutoGlobalByAccountId(accountId);
+    const timestamp = new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
+    const entry = `\n\n---\n*Diperbarui: ${timestamp}*\n${newKnowledge}`;
+
+    if (existing) {
+      const updated = (existing.content + entry).slice(-8000); // cap at 8k chars
+      await this.repository.update(existing.context_id, { content: updated });
+      const refreshed = await this.repository.findById(existing.context_id);
+      if (refreshed) this.writeToDisk(refreshed);
+      logger.info("[ContextService] Auto global context updated");
+    } else {
+      const input: CreateContextInput = {
+        context_id: generateId(),
+        account_id: accountId,
+        name: "auto:global",
+        type: "global",
+        category: "knowledge",
+        content: `# Pengetahuan Global Luna (Auto-Generated)\n\nBerikut adalah pengetahuan penting yang dikumpulkan secara otomatis dari percakapan Luna.${entry}`,
+        order: 98,
+      };
+      const ctx = await this.repository.create(input);
+      this.writeToDisk(ctx);
+      logger.info("[ContextService] Auto global context created");
+    }
+  }
+
+  /**
+   * Ensure Luna's platform capabilities context exists for an account.
+   * Called at startup — creates the context once and never overwrites manual edits.
+   */
+  async ensureCapabilitiesContext(accountId: string): Promise<void> {
+    const existing = await this.repository.findGlobalByName(
+      accountId,
+      "Luna Platform Capabilities",
+    );
+    if (existing) return;
+
+    const content = `Luna memiliki kemampuan untuk membuat dan mempublikasikan konten ke platform media sosial berikut:
+
+**Instagram**
+- Luna dapat membuat draft konten Instagram (tema, mood, visual concept, caption, hashtag)
+- Luna dapat memposting foto dan video ke Instagram Business Account
+- Konten dijadwalkan melalui dashboard Content Studio
+
+**Threads**
+- Luna dapat memposting teks, foto, dan video ke Threads
+- Threads menggunakan access token terpisah dari Instagram
+- Postingan teks dapat dilakukan tanpa media/gambar
+
+**Alur Kerja Konten:**
+1. Luna generate draft konten otomatis setiap hari atau saat diminta
+2. Pemilik/admin review dan approve draft di dashboard
+3. Setelah di-approve, konten diposting ke Instagram dan/atau Threads
+4. Luna juga bisa langsung posting saat approve dengan opsi "Post Sekarang"
+
+**Media Gallery:**
+- Luna memiliki galeri media (foto/video) yang bisa digunakan untuk konten
+- Semua media tersimpan di Supabase Storage dan dapat diakses kapan saja`;
+
+    const input: CreateContextInput = {
+      context_id: generateId(),
+      account_id: accountId,
+      name: "Luna Platform Capabilities",
+      type: "global",
+      category: "knowledge",
+      content,
+      order: 10,
+    };
+    const ctx = await this.repository.create(input);
+    this.writeToDisk(ctx);
+    logger.info(`[ContextService] Platform capabilities context created for account ${accountId}`);
+  }
+
   private writeToDisk(ctx: IContext): void {
     ensureContextsDir();
     const filePath = contextFilePath(ctx);

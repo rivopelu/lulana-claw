@@ -12,6 +12,7 @@ import {
   ImageIcon,
   VideoIcon,
   Instagram,
+  Images,
 } from "lucide-react"
 import { PageHeader } from "@/components/layout/PageHeader"
 import { Button } from "@/components/ui/button"
@@ -47,17 +48,20 @@ import {
 } from "@/components/ui/alert-dialog"
 import {
   useContentDrafts,
-  useGenerateDraft, // used inside GenerateDialog
+  useGenerateDraft,
   useApproveDraft,
   useRejectDraft,
   useReviseDraft,
   useUpdateCaption,
   useUploadAsset,
+  useSetAssetFromMedia,
   usePublishDraft,
   useDeleteDraft,
   type PublishPlatform,
 } from "@/hooks/useContent"
+import { useMediaAssets } from "@/hooks/useMedia"
 import type { ContentDraft, ContentDraftStatus } from "@/types/content"
+import type { MediaAsset } from "@/types/media"
 
 // ─── Status config ───────────────────────────────────────────────────────────
 
@@ -455,6 +459,80 @@ function EditCaptionDialog({
   )
 }
 
+// ─── Gallery picker dialog ────────────────────────────────────────────────────
+
+function GalleryPickerDialog({
+  draftId,
+  open,
+  onClose,
+}: {
+  draftId: string
+  open: boolean
+  onClose: () => void
+}) {
+  const { data: assets = [] } = useMediaAssets()
+  const setAsset = useSetAssetFromMedia()
+  const [selected, setSelected] = useState<string | null>(null)
+
+  const handleConfirm = () => {
+    if (!selected) return
+    setAsset.mutate({ id: draftId, mediaId: selected }, { onSuccess: onClose })
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Images className="h-4 w-4" />
+            Pilih dari Gallery
+          </DialogTitle>
+        </DialogHeader>
+        <div className="max-h-[60vh] overflow-y-auto">
+          {assets.length === 0 ? (
+            <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
+              Gallery kosong — upload media di halaman <strong className="ml-1">Media Gallery</strong>.
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
+              {assets.map((asset) => (
+                <button
+                  key={asset.id}
+                  type="button"
+                  onClick={() => setSelected(asset.id)}
+                  className={[
+                    "relative aspect-square overflow-hidden rounded-lg border-2 transition-all",
+                    selected === asset.id
+                      ? "border-primary ring-2 ring-primary ring-offset-1"
+                      : "border-transparent hover:border-muted-foreground/40",
+                  ].join(" ")}
+                >
+                  {asset.asset_type === "video" ? (
+                    <video src={asset.url} className="h-full w-full object-cover" muted preload="metadata" />
+                  ) : (
+                    <img src={asset.url} alt={asset.filename} className="h-full w-full object-cover" loading="lazy" />
+                  )}
+                  {selected === asset.id && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-primary/20">
+                      <CheckCircle2 className="h-6 w-6 text-primary drop-shadow" />
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Batal</Button>
+          <Button onClick={handleConfirm} disabled={!selected || setAsset.isPending}>
+            {setAsset.isPending ? "Menyimpan..." : "Pakai Gambar Ini"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ─── Draft card ───────────────────────────────────────────────────────────────
 
 function DraftCard({
@@ -476,6 +554,7 @@ function DraftCard({
   const publishDraft = usePublishDraft()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [dragOver, setDragOver] = useState(false)
+  const [galleryOpen, setGalleryOpen] = useState(false)
 
   const statusCfg = STATUS_CONFIG[draft.status]
 
@@ -519,14 +598,21 @@ function DraftCard({
             />
           )
         ) : (
-          <div className="text-center space-y-1 text-muted-foreground">
+          <div className="text-center space-y-2 text-muted-foreground">
             {uploadAsset.isPending ? (
               <p className="text-xs">Uploading...</p>
             ) : (
               <>
                 <Upload className="h-6 w-6 mx-auto" />
                 <p className="text-xs">Drag & drop or click to upload</p>
-                <p className="text-xs opacity-60">Photo or video</p>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setGalleryOpen(true) }}
+                  className="inline-flex items-center gap-1 text-xs text-primary underline-offset-2 hover:underline"
+                >
+                  <Images className="h-3 w-3" />
+                  Pilih dari Gallery
+                </button>
               </>
             )}
           </div>
@@ -678,6 +764,12 @@ function DraftCard({
           </Button>
         </div>
       </div>
+
+      <GalleryPickerDialog
+        draftId={draft.id}
+        open={galleryOpen}
+        onClose={() => setGalleryOpen(false)}
+      />
     </div>
   )
 }

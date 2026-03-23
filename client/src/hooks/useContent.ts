@@ -88,6 +88,15 @@ export function useUpdateCaption() {
   })
 }
 
+export function useSetAssetFromMedia() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, mediaId }: { id: string; mediaId: string }) =>
+      apiPut<BaseResponse<ContentDraft>>(API.CONTENT.ASSET_FROM_MEDIA(id), { media_id: mediaId }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["content"] }),
+  })
+}
+
 export function useUploadAsset() {
   const qc = useQueryClient()
   return useMutation({
