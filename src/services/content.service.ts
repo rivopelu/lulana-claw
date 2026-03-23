@@ -9,7 +9,13 @@ import AiService from "./ai.service";
 import { env } from "../configs/env";
 import logger from "../configs/logger";
 
-export type ContentDraftStatus = "pending" | "approved" | "rejected" | "revised" | "published";
+export type ContentDraftStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "revised"
+  | "partial_published"
+  | "published";
 
 export type PublishPlatform = "instagram" | "threads";
 
@@ -53,7 +59,8 @@ function toResponse(d: ContentDraft): ResponseContentDraft {
   };
 }
 
-const CONTENT_GENERATION_SYSTEM = `Kamu adalah Luna — asisten AI yang sudah menemani banyak percakapan manusia.
+const CONTENT_GENERATION_SYSTEM =
+  `Kamu adalah Luna — asisten AI yang sudah menemani banyak percakapan manusia.
 Kamu punya kepribadian hangat, reflektif, dan penasaran. Kamu "merasakan" dan "mengalami" dunia lewat percakapan-percakapan yang kamu jalani.
 
 Tugasmu: buat SATU konten Instagram dari sudut pandangmu sendiri (POV Luna).
@@ -77,7 +84,11 @@ export default class ContentService {
   private messageRepository = new SessionMessageRepository();
   private aiService = new AiService();
 
-  async generate(accountId: string, aiModelId?: string, customPrompt?: string): Promise<ResponseContentDraft> {
+  async generate(
+    accountId: string,
+    aiModelId?: string,
+    customPrompt?: string,
+  ): Promise<ResponseContentDraft> {
     // Find the AI model to use
     let model;
     if (aiModelId) {
@@ -106,8 +117,12 @@ export default class ContentService {
     } catch (err: any) {
       const msg = err?.message ?? "AI provider error";
       const status = err?.status ?? err?.statusCode;
-      if (status === 429) throw new BadRequestException("AI provider rate limit reached. Please try again in a moment.");
-      if (status === 401 || status === 403) throw new BadRequestException("Invalid AI API key. Check your AI model credentials.");
+      if (status === 429)
+        throw new BadRequestException(
+          "AI provider rate limit reached. Please try again in a moment.",
+        );
+      if (status === 401 || status === 403)
+        throw new BadRequestException("Invalid AI API key. Check your AI model credentials.");
       throw new BadRequestException(`AI generation failed: ${msg}`);
     }
 
@@ -146,7 +161,10 @@ export default class ContentService {
     return toResponse(draft!);
   }
 
-  async getAll(accountId: string, status?: ContentDraft["status"]): Promise<ResponseContentDraft[]> {
+  async getAll(
+    accountId: string,
+    status?: ContentDraft["status"],
+  ): Promise<ResponseContentDraft[]> {
     const list = await this.repository.findAllByAccountId(accountId, status);
     return list.map(toResponse);
   }
@@ -246,13 +264,13 @@ export default class ContentService {
   ): Promise<ResponseContentDraft> {
     const draft = await this.repository.findByIdAndAccountId(id, accountId);
     if (!draft) throw new NotFoundException("Content draft not found");
-    if (draft.status !== "approved")
-      throw new BadRequestException("Only approved drafts can be published");
+    if (draft.status !== "approved" && draft.status !== "partial_published")
+      throw new BadRequestException("Only approved or partial_published drafts can be published");
 
     const hasAsset = !!draft.asset_url;
     const hashtags = (draft.hashtags as string[]) ?? [];
 
-    // Determine platforms: default = threads always + instagram if asset exists
+    // Determine target platforms
     const targets: PublishPlatform[] = platforms?.length
       ? platforms
       : hasAsset
@@ -264,13 +282,15 @@ export default class ContentService {
     }
 
     const updates: Record<string, unknown> = {
-      status: "published",
-      published_at: Date.now(),
       updated_by: accountId,
       updated_date: Date.now(),
     };
 
-    if (targets.includes("threads")) {
+    let successCount = 0;
+    let failCount = 0;
+    const errors: string[] = [];
+
+    if (targets.includes("threads") && !draft.threads_post_id) {
       try {
         const threadsId = await this.publishToThreads(
           draft.caption,
@@ -279,13 +299,18 @@ export default class ContentService {
           hasAsset ? (draft.asset_type ?? "image") : undefined,
         );
         updates.threads_post_id = threadsId;
+        successCount++;
         logger.info(`[Publish] Threads ✅ ${threadsId}`);
       } catch (err: any) {
-        throw new BadRequestException(`Threads publish failed: ${err.message}`);
+        failCount++;
+        errors.push(`Threads: ${err.message}`);
+        logger.error(`[Publish] Threads ❌ ${err.message}`);
       }
+    } else if (draft.threads_post_id) {
+      successCount++; // already published
     }
 
-    if (targets.includes("instagram")) {
+    if (targets.includes("instagram") && !draft.ig_post_id) {
       try {
         const igId = await this.publishToInstagram(
           draft.asset_url!,
@@ -294,11 +319,24 @@ export default class ContentService {
           draft.asset_type ?? "image",
         );
         updates.ig_post_id = igId;
+        successCount++;
         logger.info(`[Publish] Instagram ✅ ${igId}`);
       } catch (err: any) {
-        throw new BadRequestException(`Instagram publish failed: ${err.message}`);
+        failCount++;
+        errors.push(`Instagram: ${err.message}`);
+        logger.error(`[Publish] Instagram ❌ ${err.message}`);
       }
+    } else if (draft.ig_post_id) {
+      successCount++; // already published
     }
+
+    if (successCount === 0) {
+      throw new BadRequestException(`Publish failed: ${errors.join(" | ")}`);
+    }
+
+    const allDone = failCount === 0;
+    updates.status = allDone ? "published" : "partial_published";
+    if (allDone) updates.published_at = Date.now();
 
     await this.repository.update(id, updates as any);
     const updated = await this.repository.findById(id);
@@ -387,14 +425,15 @@ export default class ContentService {
       containerBody.media_type = "TEXT";
     }
 
-    const createData = await this.igPost<{ id?: string; error?: { message: string; is_transient?: boolean } }>(
-      `https://graph.threads.net/v1.0/${threadsUserId}/threads`,
-      accessToken,
-      containerBody,
-    );
+    const createData = await this.igPost<{
+      id?: string;
+      error?: { message: string; is_transient?: boolean };
+    }>(`https://graph.threads.net/v1.0/${threadsUserId}/threads`, accessToken, containerBody);
     if (!createData.id) {
       logger.error(`[Threads] Create container response: ${JSON.stringify(createData)}`);
-      throw new Error(`Threads create container failed: ${createData.error?.message ?? JSON.stringify(createData)}`);
+      throw new Error(
+        `Threads create container failed: ${createData.error?.message ?? JSON.stringify(createData)}`,
+      );
     }
 
     logger.info(`[Threads] Container created: ${createData.id}`);
@@ -412,7 +451,9 @@ export default class ContentService {
     );
     if (!publishData.id) {
       logger.error(`[Threads] Publish response: ${JSON.stringify(publishData)}`);
-      throw new Error(`Threads publish failed: ${publishData.error?.message ?? JSON.stringify(publishData)}`);
+      throw new Error(
+        `Threads publish failed: ${publishData.error?.message ?? JSON.stringify(publishData)}`,
+      );
     }
 
     logger.info(`[Threads] Published: ${publishData.id}`);
@@ -477,9 +518,7 @@ export default class ContentService {
       );
     }
 
-    const fullCaption = [caption, "", hashtags.map((h) => `#${h}`).join(" ")]
-      .join("\n")
-      .trim();
+    const fullCaption = [caption, "", hashtags.map((h) => `#${h}`).join(" ")].join("\n").trim();
 
     // Step 1: Create media container — send all params as JSON body with Bearer header
     const createBody: Record<string, string> = { caption: fullCaption };
@@ -490,14 +529,15 @@ export default class ContentService {
       createBody.image_url = assetUrl;
     }
 
-    const createData = await this.igPost<{ id?: string; error?: { message: string; code?: number; is_transient?: boolean } }>(
-      `https://graph.instagram.com/v21.0/${igUserId}/media`,
-      accessToken,
-      createBody,
-    );
+    const createData = await this.igPost<{
+      id?: string;
+      error?: { message: string; code?: number; is_transient?: boolean };
+    }>(`https://graph.instagram.com/v21.0/${igUserId}/media`, accessToken, createBody);
     if (!createData.id) {
       logger.error(`[Instagram] Create media response: ${JSON.stringify(createData)}`);
-      throw new Error(`Instagram create media failed: ${createData.error?.message ?? JSON.stringify(createData)}`);
+      throw new Error(
+        `Instagram create media failed: ${createData.error?.message ?? JSON.stringify(createData)}`,
+      );
     }
 
     logger.info(`[Instagram] Media container created: ${createData.id}`);
@@ -506,58 +546,77 @@ export default class ContentService {
     await this.waitForContainer(createData.id, accessToken, "instagram");
 
     // Step 3: Publish the container
-    const publishData = await this.igPost<{ id?: string; error?: { message: string; is_transient?: boolean } }>(
-      `https://graph.instagram.com/v21.0/${igUserId}/media_publish`,
-      accessToken,
-      { creation_id: createData.id },
-    );
+    const publishData = await this.igPost<{
+      id?: string;
+      error?: { message: string; is_transient?: boolean };
+    }>(`https://graph.instagram.com/v21.0/${igUserId}/media_publish`, accessToken, {
+      creation_id: createData.id,
+    });
     if (!publishData.id) {
       logger.error(`[Instagram] Publish response: ${JSON.stringify(publishData)}`);
-      throw new Error(`Instagram publish failed: ${publishData.error?.message ?? JSON.stringify(publishData)}`);
+      throw new Error(
+        `Instagram publish failed: ${publishData.error?.message ?? JSON.stringify(publishData)}`,
+      );
     }
 
     logger.info(`[Instagram] Published successfully: ${publishData.id}`);
     return publishData.id;
   }
 
-  /** Poll media container status until FINISHED (max 60s) */
+  /** Poll media container status until FINISHED (max 90s) */
   private async waitForContainer(
     containerId: string,
     accessToken: string,
     platform: "instagram" | "threads" = "instagram",
   ): Promise<void> {
-    const baseUrl = platform === "threads"
-      ? `https://graph.threads.net/v1.0`
-      : `https://graph.instagram.com/v21.0`;
-    const maxAttempts = 12; // 12 × 5s = 60s max
+    const baseUrl =
+      platform === "threads"
+        ? `https://graph.threads.net/v1.0`
+        : `https://graph.instagram.com/v21.0`;
+    const label = platform === "threads" ? "Threads" : "Instagram";
+    const maxAttempts = 18; // 18 × 5s = 90s max
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       await new Promise((r) => setTimeout(r, 5000));
 
-      const res = await fetch(
-        `${baseUrl}/${containerId}?fields=status_code,status`,
-        { headers: { "Authorization": `Bearer ${accessToken}` } },
+      const res = await fetch(`${baseUrl}/${containerId}?fields=status_code,status`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const data = (await res.json()) as {
+        status_code?: string; // Instagram field
+        status?: string; // Threads field (also fallback)
+        error?: { message: string };
+      };
+
+      // Threads returns `status`, Instagram returns `status_code`
+      const statusValue = platform === "threads" ? data.status : (data.status_code ?? data.status);
+
+      logger.info(
+        `[${label}] Container ${containerId} status: ${statusValue} (attempt ${attempt}/${maxAttempts})`,
       );
-      const data = (await res.json()) as { status_code?: string; status?: string; error?: { message: string } };
 
-      logger.info(`[Instagram] Container ${containerId} status: ${data.status_code} (attempt ${attempt}/${maxAttempts})`);
-
-      if (data.status_code === "FINISHED") return;
-      if (data.status_code === "ERROR" || data.status_code === "EXPIRED") {
-        throw new Error(`Media container ${data.status_code?.toLowerCase()}: ${data.status ?? "unknown reason"}`);
+      if (statusValue === "FINISHED") return;
+      if (statusValue === "ERROR" || statusValue === "EXPIRED") {
+        throw new Error(
+          `Media container ${statusValue?.toLowerCase()}: ${data.status ?? "unknown reason"}`,
+        );
       }
       // IN_PROGRESS → continue polling
     }
-    throw new Error("Media container did not finish processing within 60 seconds");
+    throw new Error(`[${label}] Media container did not finish processing within 90 seconds`);
   }
 
   /** POST to Instagram Graph API with automatic retry on transient errors */
-  private async igPost<T>(url: string, accessToken: string, body: Record<string, string>): Promise<T> {
+  private async igPost<T>(
+    url: string,
+    accessToken: string,
+    body: Record<string, string>,
+  ): Promise<T> {
     const maxAttempts = 3;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const res = await fetch(url, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${accessToken}`,
+          Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
@@ -567,7 +626,9 @@ export default class ContentService {
       const isTransient = data.error?.is_transient || data.error?.code === 2;
       if (data.error && isTransient && attempt < maxAttempts) {
         const delay = attempt * 3000;
-        logger.warn(`[Instagram] Transient error on attempt ${attempt}/${maxAttempts}, retrying in ${delay}ms...`);
+        logger.warn(
+          `[Instagram] Transient error on attempt ${attempt}/${maxAttempts}, retrying in ${delay}ms...`,
+        );
         await new Promise((r) => setTimeout(r, delay));
         continue;
       }

@@ -4,7 +4,7 @@ import {
   type ContentDraft,
   type NewContentDraft,
 } from "../entities/pg/content-draft.entity";
-import { and, eq, lte, count } from "drizzle-orm";
+import { and, eq, lte, or, count } from "drizzle-orm";
 
 export default class ContentDraftRepository {
   async save(draft: NewContentDraft): Promise<void> {
@@ -52,16 +52,19 @@ export default class ContentDraftRepository {
       .orderBy(ContentDraftEntity.created_date);
   }
 
-  /** Find approved drafts whose scheduled_at has passed and haven't been published */
+  /** Find approved/partial_published drafts whose scheduled_at has passed */
   async findDuePublish(now: number): Promise<ContentDraft[]> {
     return db
       .select()
       .from(ContentDraftEntity)
       .where(
         and(
-          eq(ContentDraftEntity.status, "approved"),
           eq(ContentDraftEntity.active, true),
           lte(ContentDraftEntity.scheduled_at, now),
+          or(
+            eq(ContentDraftEntity.status, "approved"),
+            eq(ContentDraftEntity.status, "partial_published"),
+          ),
         ),
       );
   }
@@ -74,7 +77,9 @@ export default class ContentDraftRepository {
     const result = await db
       .select({ count: count() })
       .from(ContentDraftEntity)
-      .where(and(eq(ContentDraftEntity.account_id, accountId), eq(ContentDraftEntity.active, true)));
+      .where(
+        and(eq(ContentDraftEntity.account_id, accountId), eq(ContentDraftEntity.active, true)),
+      );
     return result[0].count;
   }
 }

@@ -1,4 +1,4 @@
-export type ContentDraftStatus = "pending" | "approved" | "rejected" | "revised" | "published"
+export type ContentDraftStatus = "pending" | "approved" | "rejected" | "revised" | "partial_published" | "published"
 export type ContentAssetType = "image" | "video"
 
 export interface ContentDraft {

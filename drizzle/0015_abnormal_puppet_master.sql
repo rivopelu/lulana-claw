@@ -1,0 +1,1 @@
+ALTER TYPE "public"."content_draft_status" ADD VALUE 'partial_published' BEFORE 'published';

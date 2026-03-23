@@ -8,6 +8,7 @@ export const contentDraftStatusEnum = pgEnum("content_draft_status", [
   "approved",
   "rejected",
   "revised",
+  "partial_published",
   "published",
 ]);
 

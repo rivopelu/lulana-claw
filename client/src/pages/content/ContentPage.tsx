@@ -66,11 +66,12 @@ import type { MediaAsset } from "@/types/media"
 // ─── Status config ───────────────────────────────────────────────────────────
 
 const STATUS_CONFIG: Record<ContentDraftStatus, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  pending:   { label: "Pending",   variant: "secondary" },
-  approved:  { label: "Approved",  variant: "default" },
-  rejected:  { label: "Rejected",  variant: "destructive" },
-  revised:   { label: "Needs Revision", variant: "outline" },
-  published: { label: "Published", variant: "default" },
+  pending:           { label: "Pending",          variant: "secondary" },
+  approved:          { label: "Approved",          variant: "default" },
+  rejected:          { label: "Rejected",          variant: "destructive" },
+  revised:           { label: "Needs Revision",    variant: "outline" },
+  partial_published: { label: "Partial Published", variant: "outline" },
+  published:         { label: "Published",         variant: "default" },
 }
 
 // ─── Generate dialog ─────────────────────────────────────────────────────────
@@ -354,6 +355,101 @@ function ApproveDialog({
   )
 }
 
+// ─── Publish dialog ───────────────────────────────────────────────────────────
+
+function PublishDialog({
+  draft,
+  onClose,
+}: {
+  draft: ContentDraft | null
+  onClose: () => void
+}) {
+  const publishDraft = usePublishDraft()
+  const hasAsset = !!draft?.asset_url
+
+  // Pre-select only platforms NOT yet published
+  const defaultPlatforms = (): PublishPlatform[] => {
+    if (!draft) return ["threads"]
+    const result: PublishPlatform[] = []
+    if (!draft.threads_post_id) result.push("threads")
+    if (hasAsset && !draft.ig_post_id) result.push("instagram")
+    return result.length ? result : ["threads"]
+  }
+  const [platforms, setPlatforms] = useState<PublishPlatform[]>(defaultPlatforms)
+
+  // Reset when draft changes
+  const [lastId, setLastId] = useState<string | null>(null)
+  if (draft && draft.id !== lastId) {
+    setLastId(draft.id)
+    setPlatforms(defaultPlatforms())
+  }
+
+  const alreadyDone = draft
+    ? (platforms.includes("threads") ? !draft.threads_post_id : true) &&
+      (platforms.includes("instagram") ? !draft.ig_post_id : true)
+    : false
+
+  const handlePublish = () => {
+    if (!draft) return
+    publishDraft.mutate({ id: draft.id, platforms }, { onSuccess: onClose })
+  }
+
+  return (
+    <Dialog open={!!draft} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Publish ke Platform</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          {draft?.status === "partial_published" && (
+            <div className="rounded bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700 space-y-1">
+              <p className="font-semibold">⚠ Partial published — beberapa platform gagal</p>
+              <div className="flex gap-2 flex-wrap">
+                {draft.threads_post_id && (
+                  <span className="text-green-700">✅ Threads sudah terbit</span>
+                )}
+                {draft.ig_post_id && (
+                  <span className="text-green-700">✅ Instagram sudah terbit</span>
+                )}
+                {!draft.threads_post_id && (
+                  <span className="text-red-600">❌ Threads belum terbit</span>
+                )}
+                {hasAsset && !draft.ig_post_id && (
+                  <span className="text-red-600">❌ Instagram belum terbit</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          <PlatformToggle hasAsset={hasAsset} value={platforms} onChange={setPlatforms} />
+
+          {/* Skip warning for already-published platform */}
+          {draft?.threads_post_id && platforms.includes("threads") && (
+            <p className="text-xs text-muted-foreground">Threads sudah terbit — akan di-skip.</p>
+          )}
+          {draft?.ig_post_id && platforms.includes("instagram") && (
+            <p className="text-xs text-muted-foreground">Instagram sudah terbit — akan di-skip.</p>
+          )}
+
+          {publishDraft.error && (
+            <p className="text-xs text-destructive">{(publishDraft.error as Error).message}</p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={publishDraft.isPending}>Batal</Button>
+          <Button
+            onClick={handlePublish}
+            disabled={publishDraft.isPending || platforms.length === 0}
+          >
+            <Send className="h-3.5 w-3.5 mr-1.5" />
+            {publishDraft.isPending ? "Publishing..." : "Publish"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ─── Revise dialog ───────────────────────────────────────────────────────────
 
 function ReviseDialog({
@@ -542,6 +638,7 @@ function DraftCard({
   onRevise,
   onEditCaption,
   onDelete,
+  onPublish,
 }: {
   draft: ContentDraft
   onApprove: (d: ContentDraft) => void
@@ -549,9 +646,9 @@ function DraftCard({
   onRevise: (d: ContentDraft) => void
   onEditCaption: (d: ContentDraft) => void
   onDelete: (d: ContentDraft) => void
+  onPublish: (d: ContentDraft) => void
 }) {
   const uploadAsset = useUploadAsset()
-  const publishDraft = usePublishDraft()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [dragOver, setDragOver] = useState(false)
   const [galleryOpen, setGalleryOpen] = useState(false)
@@ -733,26 +830,21 @@ function DraftCard({
             </Button>
           )}
 
-          {draft.status === "approved" && (
+          {draft.status === "approved" || draft.status === "partial_published" ? (
             <Button
               size="sm"
-              className="h-7 text-xs"
-              onClick={() => {
-                const platforms: PublishPlatform[] = draft.asset_url
-                  ? ["threads", "instagram"]
-                  : ["threads"]
-                publishDraft.mutate({ id: draft.id, platforms })
-              }}
-              disabled={publishDraft.isPending}
+              className={[
+                "h-7 text-xs",
+                draft.status === "partial_published"
+                  ? "bg-amber-500 hover:bg-amber-600 text-white"
+                  : "",
+              ].join(" ")}
+              onClick={() => onPublish(draft)}
             >
               <Send className="h-3 w-3 mr-1" />
-              {publishDraft.isPending
-                ? "Publishing..."
-                : draft.asset_url
-                  ? "Threads + IG"
-                  : "Post ke Threads"}
+              {draft.status === "partial_published" ? "Retry Publish" : "Publish"}
             </Button>
-          )}
+          ) : null}
 
           <Button
             size="sm"
@@ -777,12 +869,13 @@ function DraftCard({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 const TABS: { value: ContentDraftStatus | "all"; label: string }[] = [
-  { value: "all",       label: "All" },
-  { value: "pending",   label: "Pending" },
-  { value: "approved",  label: "Approved" },
-  { value: "revised",   label: "Needs Revision" },
-  { value: "published", label: "Published" },
-  { value: "rejected",  label: "Rejected" },
+  { value: "all",               label: "All" },
+  { value: "pending",           label: "Pending" },
+  { value: "approved",          label: "Approved" },
+  { value: "revised",           label: "Needs Revision" },
+  { value: "partial_published", label: "Partial Published" },
+  { value: "published",         label: "Published" },
+  { value: "rejected",          label: "Rejected" },
 ]
 
 export function ContentPage() {
@@ -797,6 +890,7 @@ export function ContentPage() {
   const [editTarget, setEditTarget] = useState<ContentDraft | null>(null)
   const [rejectTarget, setRejectTarget] = useState<ContentDraft | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ContentDraft | null>(null)
+  const [publishTarget, setPublishTarget] = useState<ContentDraft | null>(null)
 
   const filtered =
     activeTab === "all" ? allDrafts : allDrafts.filter((d) => d.status === activeTab)
@@ -846,7 +940,7 @@ export function ContentPage() {
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {filtered.map((d) => (
-                  <DraftCard
+                   <DraftCard
                     key={d.id}
                     draft={d}
                     onApprove={setApproveTarget}
@@ -854,6 +948,7 @@ export function ContentPage() {
                     onRevise={setReviseTarget}
                     onEditCaption={setEditTarget}
                     onDelete={setDeleteTarget}
+                    onPublish={setPublishTarget}
                   />
                 ))}
               </div>
@@ -867,6 +962,9 @@ export function ContentPage() {
 
       {/* Approve dialog */}
       <ApproveDialog draft={approveTarget} onClose={() => setApproveTarget(null)} />
+
+      {/* Publish dialog */}
+      <PublishDialog draft={publishTarget} onClose={() => setPublishTarget(null)} />
 
       {/* Revise dialog */}
       <ReviseDialog draft={reviseTarget} onClose={() => setReviseTarget(null)} />

@@ -39,7 +39,11 @@ export class ContentController {
   async generate(c: Context) {
     const accountId = getAccountId(c);
     const body = await c.req.json().catch(() => ({}));
-    const draft = await this.contentService.generate(accountId, body.ai_model_id, body.custom_prompt);
+    const draft = await this.contentService.generate(
+      accountId,
+      body.ai_model_id,
+      body.custom_prompt,
+    );
     return c.json(responseHelper.data(draft), 201);
   }
 
@@ -48,14 +52,30 @@ export class ContentController {
     const id = c.req.param("id");
     const accountId = getAccountId(c);
     const body = await c.req.json().catch(() => ({}));
-    const draft = await this.contentService.approve(
+
+    const draft = await this.contentService.getById(id, accountId);
+    if (body.publish_now === true && draft.asset_url) {
+      const approvedDraft = await this.contentService.approve(
+        id,
+        accountId,
+        body.scheduled_at,
+        false,
+        undefined,
+      );
+      this.contentService
+        .publish(id, accountId, Array.isArray(body.platforms) ? body.platforms : undefined)
+        .catch((err) => console.error(`[Background Publish Error] ${id}:`, err));
+      return c.json(responseHelper.data(approvedDraft));
+    }
+
+    const updatedDraft = await this.contentService.approve(
       id,
       accountId,
       body.scheduled_at,
       body.publish_now === true,
       Array.isArray(body.platforms) ? body.platforms : undefined,
     );
-    return c.json(responseHelper.data(draft));
+    return c.json(responseHelper.data(updatedDraft));
   }
 
   @Put(":id/reject")
@@ -80,7 +100,12 @@ export class ContentController {
     const id = c.req.param("id");
     const accountId = getAccountId(c);
     const body = await c.req.json();
-    const draft = await this.contentService.updateCaption(id, accountId, body.caption, body.hashtags);
+    const draft = await this.contentService.updateCaption(
+      id,
+      accountId,
+      body.caption,
+      body.hashtags,
+    );
     return c.json(responseHelper.data(draft));
   }
 
@@ -104,7 +129,11 @@ export class ContentController {
     }
 
     const filename = `content/${accountId}/${id}-${Date.now()}.${ext}`;
-    const publicUrl = await uploadToSupabase(await file.arrayBuffer(), filename, file.type || `${assetType}/${ext}`);
+    const publicUrl = await uploadToSupabase(
+      await file.arrayBuffer(),
+      filename,
+      file.type || `${assetType}/${ext}`,
+    );
 
     const draft = await this.contentService.setAsset(id, accountId, publicUrl, assetType);
     return c.json(responseHelper.data(draft));
@@ -126,8 +155,17 @@ export class ContentController {
     const accountId = getAccountId(c);
     const body = await c.req.json().catch(() => ({}));
     const platforms = Array.isArray(body.platforms) ? body.platforms : undefined;
-    const draft = await this.contentService.publish(id, accountId, platforms);
-    return c.json(responseHelper.data(draft));
+
+    const draft = await this.contentService.getById(id, accountId);
+    if (draft.asset_url) {
+      this.contentService
+        .publish(id, accountId, platforms)
+        .catch((err) => console.error(`[Background Publish Error] ${id}:`, err));
+      return c.json(responseHelper.data(draft));
+    }
+
+    const updatedDraft = await this.contentService.publish(id, accountId, platforms);
+    return c.json(responseHelper.data(updatedDraft));
   }
 
   @Delete(":id")
