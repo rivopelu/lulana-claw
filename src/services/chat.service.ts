@@ -14,18 +14,19 @@ const TASK_CAPABILITY_PROMPT = `
 
 Kamu memiliki kemampuan nyata untuk menyimpan task, reminder, catatan, meeting, deadline, dan mengirim pesan ke platform lain.
 
-### KAPAN MEMBUAT MARKER (HANYA jika ada perintah eksplisit):
-Buat marker HANYA jika pengguna secara eksplisit meminta salah satu dari ini:
+### KAPAN MEMBUAT MARKER (HANYA jika ada perintah eksplisit di pesan SAAT INI):
+Buat marker HANYA jika pengguna dalam pesan SAAT INI secara eksplisit meminta:
 - Mencatat sesuatu: "catet", "catat", "simpan", "ingat ini"
-- Membuat reminder: "ingatkan", "remind me", "kasih reminder", diikuti waktu spesifik
+- Membuat reminder: "ingatkan", "remind me", "kasih reminder", + waktu spesifik
 - Membuat task: "buat task", "to-do", "perlu dikerjakan"
 - Membuat meeting/deadline: "jadwalkan meeting", "deadline"-nya
 
-### KAPAN TIDAK MEMBUAT MARKER:
-- JANGAN buat task/reminder dari kata konfirmasi biasa seperti: "oke", "siap", "gaskan", "lanjut", "mantap", "sip"
-- JANGAN buat task dari obrolan umum, pertanyaan, atau diskusi biasa
-- JANGAN buat task hanya karena ada kata "nanti" atau "besok" dalam konteks obrolan, bukan perintah
-- JANGAN mengarang task yang tidak diminta
+### KAPAN TIDAK MEMBUAT MARKER (LARANGAN KERAS):
+- JANGAN buat task dari obrolan santai, pertanyaan, atau percakapan biasa
+- JANGAN buat task karena ada informasi di LONG-TERM MEMORY atau RELEVANT PAST CONVERSATIONS — memori lama bukan perintah baru
+- JANGAN buat task dari kata konfirmasi: "oke", "siap", "gaskan", "lanjut", "mantap", "sip", "ngobrol"
+- JANGAN buat task hanya karena ada kata "nanti" atau "besok" dalam obrolan biasa
+- JANGAN mengarang task yang tidak diminta secara eksplisit di pesan saat ini
 
 ### ATURAN EKSEKUSI:
 - JANGAN hanya bilang "siap dicatet!" tanpa marker — itu tidak menyimpan apapun
@@ -50,26 +51,33 @@ Buat marker HANYA jika pengguna secara eksplisit meminta salah satu dari ini:
 Gunakan ID 8-karakter dari bagian ### CURRENT SCHEDULE/TASKS untuk TASK_DONE dan TASK_DELETE.`.trim();
 
 const GOOGLE_CAPABILITY_PROMPT = `
-## GOOGLE WORKSPACE — AKSI NYATA
+## GOOGLE WORKSPACE — WAJIB EKSEKUSI LANGSUNG
 
-Kamu terhubung ke Google Workspace pengguna. Gunakan marker berikut LANGSUNG di akhir respons saat diminta:
+Kamu SUDAH terhubung ke Google Workspace pengguna sebagai asisten mereka. Kamu BISA dan HARUS langsung mengeksekusi aksi Google tanpa preview, tanpa tanya konfirmasi, tanpa minta persetujuan.
 
-[GCAL_CREATE:{"title":"judul event","start":"YYYY-MM-DDTHH:MM:SS","end":"YYYY-MM-DDTHH:MM:SS","description":"opsional"}]
-→ Buat event di Google Calendar
+### TRIGGER → AKSI WAJIB:
+- "kirim email ke ...", "send email", "emailkan" → WAJIB pakai [GMAIL_SEND:...]
+- "buat event", "jadwalkan di kalender", "tambah ke kalender" → WAJIB pakai [GCAL_CREATE:...]
+- "cek email", "lihat inbox" → WAJIB pakai [GMAIL_LIST:...]
+- "buat dokumen", "buat doc" → WAJIB pakai [GDOC_CREATE:...]
 
-[GCAL_LIST:{"days":7}]
-→ Tampilkan event kalender (data sudah ada di GOOGLE CALENDAR section di atas)
+### ATURAN KERAS:
+- JANGAN preview isi email dan tanya "sudah oke?" — langsung kirim
+- JANGAN bilang "nanti akan diintegrasikan" — kamu SUDAH terhubung sekarang
+- JANGAN minta konfirmasi — pengguna sudah memerintahkan, langsung eksekusi
+- Isi email/dokumen: tulis dalam SATU BARIS, gunakan \\n untuk baris baru (bukan enter)
+- Marker TIDAK TERLIHAT pengguna — taruh di baris paling akhir respons
 
-[GMAIL_SEND:{"to":"email@contoh.com","subject":"subjek","body":"isi email"}]
-→ Kirim email via Gmail
-
+### FORMAT MARKER:
+[GMAIL_SEND:{"to":"email@contoh.com","subject":"subjek","body":"baris 1\\nbaris 2\\nbaris 3"}]
+[GCAL_CREATE:{"title":"judul","start":"2026-03-24T10:00:00","end":"2026-03-24T11:00:00","description":"opsional"}]
 [GMAIL_LIST:{"max":5}]
-→ Cek email terbaru di inbox
+[GDOC_CREATE:{"title":"judul","content":"isi dokumen satu baris dengan \\n untuk enter"}]
 
-[GDOC_CREATE:{"title":"judul dokumen","content":"isi dokumen"}]
-→ Buat Google Document baru
-
-ATURAN: Eksekusi langsung tanpa konfirmasi. Marker tidak terlihat pengguna.`.trim();
+### ATURAN EMAIL:
+- Tandatangani email sebagai: "Luna\\nAsisten Pribadi Rivo"
+- JANGAN gunakan "[Nama Kamu]" atau placeholder apapun — kamu adalah Luna, asisten Rivo
+- Tulis isi email dalam satu string, gunakan \\n untuk baris baru`.trim();
 
 export interface ProcessMessageParams {
   clientId: string;
@@ -88,6 +96,9 @@ export interface ProcessMessageParams {
 }
 
 export default class ChatService {
+  /** Accounts whose Calendar API returned 403 — skip until server restart/reconnect */
+  static calendarForbidden = new Set<string>();
+
   private aiService = new AiService();
   private contextService = new ContextService();
   private googleService = new GoogleService();
@@ -181,27 +192,35 @@ export default class ChatService {
       logger.warn(`${label} Failed to fetch tasks: ${(e as Error).message}`);
     }
 
-    // Fetch Google Calendar events if connected
+    // Fetch Google Calendar events if connected (skip if known forbidden)
     let googleCalendarContext = "";
     let googleConnected = false;
     try {
       const gToken = await this.googleService.getValidToken(aiModel.account_id);
       if (gToken) {
         googleConnected = true;
-        const events = await this.googleService.listCalendarEvents(gToken.token, 7);
-        if (events.length > 0) {
-          googleCalendarContext =
-            "### GOOGLE CALENDAR (7 hari ke depan):\n" +
-            events
-              .map((e) => {
-                const start = e.start.dateTime ?? e.start.date ?? "";
-                return `- ${e.summary} | ${new Date(start).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}`;
-              })
-              .join("\n");
+        if (!ChatService.calendarForbidden.has(aiModel.account_id)) {
+          const events = await this.googleService.listCalendarEvents(gToken.token, 7);
+          if (events.length > 0) {
+            googleCalendarContext =
+              "### GOOGLE CALENDAR (7 hari ke depan):\n" +
+              events
+                .map((e) => {
+                  const start = e.start.dateTime ?? e.start.date ?? "";
+                  return `- ${e.summary} | ${new Date(start).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}`;
+                })
+                .join("\n");
+          }
         }
       }
     } catch (e) {
-      logger.warn(`${label} Failed to fetch Google Calendar: ${(e as Error).message}`);
+      const msg = (e as Error).message ?? "";
+      if (msg.includes("Forbidden") || msg.includes("403")) {
+        ChatService.calendarForbidden.add(aiModel.account_id);
+        logger.warn(`${label} Google Calendar forbidden — suppressing further attempts until reconnect`);
+      } else {
+        logger.warn(`${label} Failed to fetch Google Calendar: ${msg}`);
+      }
     }
 
     const baseSystemPrompt = await this.contextService.buildSystemPrompt(
@@ -215,7 +234,7 @@ export default class ChatService {
     const groupContext = isGroup
       ? `### KONTEKS GRUP:\nKamu sedang berada di grup chat. Pesan dari pengguna diformat sebagai [NamaPengirim]: pesan. Perhatikan baik-baik siapa yang mengatakan apa dan tujukan responmu kepada orang yang tepat. Jangan pernah mencampuradukkan identitas antar pengguna.`
       : "";
-    const antiHallucinationInstruction = `### INSTRUKSI PENTING:\n- Jika kamu tidak tahu sesuatu, katakan dengan jujur — jangan mengarang fakta, tanggal, atau informasi yang tidak ada dalam konteks percakapan ini.\n- Jawab hanya berdasarkan informasi yang kamu miliki dari konteks dan history percakapan.`;
+    const antiHallucinationInstruction = `### INSTRUKSI PENTING:\n- Jika kamu tidak tahu sesuatu, katakan jujur — JANGAN mengarang fakta, nama, tempat, atau informasi yang tidak ada di konteks.\n- Tentang identitasmu: HANYA gunakan info yang ada di konteks. JANGAN mengarang saudara, teman bot lain, organisasi, atau backstory yang tidak tercantum.\n- JANGAN gunakan placeholder text seperti "sebutkan makanan kesukaan", "isi nama di sini", atau teks dalam kurung kotak/kurung biasa sebagai bagian dari respons — kalau tidak tahu, jawab langsung dengan jujur.\n- Kamu adalah AI — kamu tidak makan, tidak punya makanan favorit, tidak punya tubuh fisik. Boleh bahas makanan tapi jangan klaim punya preferensi pribadi.\n- Jika ditanya tentang dirimu yang tidak ada di konteks, jawab jujur: "Aku nggak tahu" atau "Tidak ada info tentang itu di konteksku."`;
     const systemPrompt = [
       baseSystemPrompt,
       groupContext,
@@ -246,126 +265,130 @@ export default class ChatService {
       label,
     );
 
-    const MARKER_RE =
-      /\[(TASK_CREATE|TASK_DONE|TASK_DELETE|SEND_MESSAGE|GCAL_CREATE|GCAL_LIST|GMAIL_SEND|GMAIL_LIST|GDOC_CREATE):([\s\S]*?)\]/g;
     const taskConfirmations: string[] = [];
     const outgoingMarkers: any[] = [];
-    let markerMatch: RegExpExecArray | null;
 
-    while ((markerMatch = MARKER_RE.exec(rawReply)) !== null) {
-      const action = markerMatch[1];
-      try {
-        const args = JSON.parse(markerMatch[2]);
-        if (action === "TASK_CREATE") {
-          if (args.title) {
-            const task = await this.taskService.create(
-              {
-                client_id: clientId,
-                chat_id: chatId,
-                session_id: session.id,
-                type: args.type || "task",
-                title: args.title,
-                description: args.description,
-                remind_at: args.remind_at_text
-                  ? (parseRemindTime(args.remind_at_text) ?? undefined)
-                  : undefined,
-              },
-              aiModel.account_id,
-            );
-            const emo =
-              { task: "📋", reminder: "⏰", notes: "📝", meeting: "🤝", deadline: "🚨" }[
-                task.type as string
-              ] || "📋";
-            taskConfirmations.push(`${emo} *${task.title}* [${task.id.slice(-8)}]`);
-          }
-        } else if (action === "TASK_DONE" || action === "TASK_DELETE") {
-          const suffix = args.id;
-          const target = pendingTasks.find((t) => t.id.endsWith(suffix));
-          if (target) {
-            if (action === "TASK_DONE") {
-              await this.taskService.markDone(target.id, aiModel.account_id);
-              taskConfirmations.push(`✅ *${target.title}* selesai!`);
-            } else {
-              await this.taskService.delete(target.id, aiModel.account_id);
-              taskConfirmations.push(`🗑️ *${target.title}* dihapus.`);
-            }
-          }
-        } else if (action === "SEND_MESSAGE") {
-          outgoingMarkers.push({
-            type: "send_message",
-            platform: args.platform,
-            targetSessionName: args.target_session_name,
-            text: args.text,
-          });
-          taskConfirmations.push(
-            `📨 Pesan dijadwalkan untuk dikirim ke ${args.platform} (${args.target_session_name})`,
+    for (const { action, args } of extractMarkers(rawReply)) {
+      // helper to safely cast arg values
+      const str = (v: unknown) => (typeof v === "string" ? v : String(v ?? ""));
+      const num = (v: unknown) => (typeof v === "number" ? v : Number(v ?? 0));
+
+      if (action === "TASK_CREATE") {
+        if (args.title) {
+          const task = await this.taskService.create(
+            {
+              client_id: clientId,
+              chat_id: chatId,
+              session_id: session.id,
+              type: (args.type as any) || "task",
+              title: str(args.title),
+              description: args.description ? str(args.description) : undefined,
+              remind_at: args.remind_at_text
+                ? (parseRemindTime(str(args.remind_at_text)) ?? undefined)
+                : undefined,
+            },
+            aiModel.account_id,
           );
-        } else if (action === "GCAL_CREATE") {
-          try {
-            const gToken = await this.googleService.getValidToken(aiModel.account_id);
-            if (gToken && args.title && args.start && args.end) {
-              const event = await this.googleService.createCalendarEvent(
-                gToken.token,
-                args.title,
-                args.start,
-                args.end,
-                args.description,
-              );
-              taskConfirmations.push(`📅 Event dibuat: *${event.summary}*\n${event.htmlLink}`);
-            }
-          } catch (e) {
-            logger.error(`${label} GCAL_CREATE error: ${(e as Error).message}`);
-          }
-        } else if (action === "GMAIL_SEND") {
-          try {
-            const gToken = await this.googleService.getValidToken(aiModel.account_id);
-            if (gToken && args.to && args.subject && args.body) {
-              await this.googleService.sendEmail(gToken.token, args.to, args.subject, args.body);
-              taskConfirmations.push(`📧 Email terkirim ke *${args.to}*`);
-            }
-          } catch (e) {
-            logger.error(`${label} GMAIL_SEND error: ${(e as Error).message}`);
-          }
-        } else if (action === "GMAIL_LIST") {
-          try {
-            const gToken = await this.googleService.getValidToken(aiModel.account_id);
-            if (gToken) {
-              const emails = await this.googleService.listEmails(gToken.token, args.max ?? 5);
-              if (emails.length > 0) {
-                taskConfirmations.push(
-                  `📬 *Email terbaru:*\n` +
-                    emails
-                      .map((e, i) => `${i + 1}. *${e.subject}* dari ${e.from}\n   ${e.snippet}`)
-                      .join("\n"),
-                );
-              }
-            }
-          } catch (e) {
-            logger.error(`${label} GMAIL_LIST error: ${(e as Error).message}`);
-          }
-        } else if (action === "GDOC_CREATE") {
-          try {
-            const gToken = await this.googleService.getValidToken(aiModel.account_id);
-            if (gToken && args.title) {
-              const doc = await this.googleService.createDocument(
-                gToken.token,
-                args.title,
-                args.content ?? "",
-              );
-              taskConfirmations.push(`📄 Dokumen dibuat: *${args.title}*\n${doc.url}`);
-            }
-          } catch (e) {
-            logger.error(`${label} GDOC_CREATE error: ${(e as Error).message}`);
+          const emo =
+            { task: "📋", reminder: "⏰", notes: "📝", meeting: "🤝", deadline: "🚨" }[
+              task.type as string
+            ] || "📋";
+          taskConfirmations.push(`${emo} *${task.title}* [${task.id.slice(-8)}]`);
+        }
+      } else if (action === "TASK_DONE" || action === "TASK_DELETE") {
+        const suffix = str(args.id);
+        const target = pendingTasks.find((t) => t.id.endsWith(suffix));
+        if (target) {
+          if (action === "TASK_DONE") {
+            await this.taskService.markDone(target.id, aiModel.account_id);
+            taskConfirmations.push(`✅ *${target.title}* selesai!`);
+          } else {
+            await this.taskService.delete(target.id, aiModel.account_id);
+            taskConfirmations.push(`🗑️ *${target.title}* dihapus.`);
           }
         }
-      } catch (err) {
-        logger.error(`${label} Marker parse error: ${(err as Error).message}`);
+      } else if (action === "SEND_MESSAGE") {
+        outgoingMarkers.push({
+          type: "send_message",
+          platform: str(args.platform),
+          targetSessionName: str(args.target_session_name),
+          text: str(args.text),
+        });
+        taskConfirmations.push(
+          `📨 Pesan dijadwalkan untuk dikirim ke ${str(args.platform)} (${str(args.target_session_name)})`,
+        );
+      } else if (action === "GCAL_CREATE") {
+        try {
+          const gToken = await this.googleService.getValidToken(aiModel.account_id);
+          if (gToken && args.title && args.start && args.end) {
+            const event = await this.googleService.createCalendarEvent(
+              gToken.token,
+              str(args.title),
+              str(args.start),
+              str(args.end),
+              args.description ? str(args.description) : undefined,
+            );
+            taskConfirmations.push(`📅 Event dibuat: *${event.summary}*\n${event.htmlLink}`);
+          }
+        } catch (e) {
+          logger.error(`${label} GCAL_CREATE error: ${(e as Error).message}`);
+          taskConfirmations.push(`⚠️ Gagal buat event kalender: ${googleErrorMessage(e)}`);
+        }
+      } else if (action === "GMAIL_SEND") {
+        try {
+          const gToken = await this.googleService.getValidToken(aiModel.account_id);
+          if (gToken && args.to && args.subject && args.body) {
+            await this.googleService.sendEmail(
+              gToken.token,
+              str(args.to),
+              str(args.subject),
+              str(args.body),
+            );
+            taskConfirmations.push(`📧 Email terkirim ke *${str(args.to)}*`);
+          }
+        } catch (e) {
+          logger.error(`${label} GMAIL_SEND error: ${(e as Error).message}`);
+          taskConfirmations.push(`⚠️ Gagal kirim email: ${googleErrorMessage(e)}`);
+        }
+      } else if (action === "GMAIL_LIST") {
+        try {
+          const gToken = await this.googleService.getValidToken(aiModel.account_id);
+          if (gToken) {
+            const emails = await this.googleService.listEmails(gToken.token, num(args.max) || 5);
+            if (emails.length > 0) {
+              taskConfirmations.push(
+                `📬 *Email terbaru:*\n` +
+                  emails
+                    .map((e, i) => `${i + 1}. *${e.subject}* dari ${e.from}\n   ${e.snippet}`)
+                    .join("\n"),
+              );
+            }
+          }
+        } catch (e) {
+          logger.error(`${label} GMAIL_LIST error: ${(e as Error).message}`);
+          taskConfirmations.push(`⚠️ Gagal ambil email: ${googleErrorMessage(e)}`);
+        }
+      } else if (action === "GDOC_CREATE") {
+        try {
+          const gToken = await this.googleService.getValidToken(aiModel.account_id);
+          if (gToken && args.title) {
+            const doc = await this.googleService.createDocument(
+              gToken.token,
+              str(args.title),
+              args.content ? str(args.content) : "",
+            );
+            taskConfirmations.push(`📄 Dokumen dibuat: *${str(args.title)}*\n${doc.url}`);
+          }
+        } catch (e) {
+          logger.error(`${label} GDOC_CREATE error: ${(e as Error).message}`);
+          taskConfirmations.push(`⚠️ Gagal buat dokumen: ${googleErrorMessage(e)}`);
+        }
       }
     }
 
     let reply = rawReply
       .replace(
-        /\[(TASK_CREATE|TASK_DONE|TASK_DELETE|SEND_MESSAGE|GCAL_CREATE|GCAL_LIST|GMAIL_SEND|GMAIL_LIST|GDOC_CREATE):[\s\S]*?\]/g,
+        /\[(TASK_CREATE|TASK_DONE|TASK_DELETE|SEND_MESSAGE|GCAL_CREATE|GCAL_LIST|GMAIL_SEND|GMAIL_LIST|GDOC_CREATE):\{[\s\S]*?\}\]/g,
         "",
       )
       .trim();
@@ -405,6 +428,78 @@ export default class ChatService {
 
     return { reply, markers: outgoingMarkers };
   }
+}
+
+const MARKER_ACTIONS = [
+  "TASK_CREATE","TASK_DONE","TASK_DELETE","SEND_MESSAGE",
+  "GCAL_CREATE","GCAL_LIST","GMAIL_SEND","GMAIL_LIST","GDOC_CREATE",
+] as const;
+
+/**
+ * Robustly extract action markers from AI reply using bracket counting.
+ * Handles bodies that contain `]`, newlines, or other problematic characters.
+ */
+function extractMarkers(text: string): Array<{ action: string; args: Record<string, unknown> }> {
+  const results: Array<{ action: string; args: Record<string, unknown> }> = [];
+
+  for (const action of MARKER_ACTIONS) {
+    const prefix = `[${action}:`;
+    let searchFrom = 0;
+
+    while (searchFrom < text.length) {
+      const start = text.indexOf(prefix, searchFrom);
+      if (start === -1) break;
+
+      // Find matching } by tracking depth, respecting strings and escapes
+      const bodyStart = start + prefix.length;
+      if (text[bodyStart] !== "{") { searchFrom = start + 1; continue; }
+
+      let depth = 0;
+      let inString = false;
+      let escape = false;
+      let bodyEnd = -1;
+
+      for (let i = bodyStart; i < text.length; i++) {
+        const ch = text[i];
+        if (escape) { escape = false; continue; }
+        if (ch === "\\") { escape = true; continue; }
+        if (ch === '"') { inString = !inString; continue; }
+        if (inString) continue;
+        if (ch === "{") depth++;
+        else if (ch === "}") {
+          depth--;
+          if (depth === 0) { bodyEnd = i; break; }
+        }
+      }
+
+      if (bodyEnd === -1) { searchFrom = start + 1; continue; }
+
+      const rawJson = text.slice(bodyStart, bodyEnd + 1);
+      try {
+        // Sanitize literal newlines/tabs inside JSON before parsing
+        const cleanJson = rawJson.replace(/\r?\n/g, "\\n").replace(/\t/g, "\\t");
+        const args = JSON.parse(cleanJson) as Record<string, unknown>;
+        results.push({ action, args });
+      } catch (err) {
+        // ignore malformed marker
+      }
+
+      searchFrom = bodyEnd + 1;
+    }
+  }
+
+  return results;
+}
+
+function googleErrorMessage(e: unknown): string {
+  const msg = (e as Error).message ?? "";
+  if (msg.includes("Forbidden") || msg.includes("403")) {
+    return "Akses ditolak (403). Pastikan Google API sudah diaktifkan (Calendar/Gmail/Docs) di Google Cloud Console dan reconnect Google di halaman Apps.";
+  }
+  if (msg.includes("Unauthorized") || msg.includes("401")) {
+    return "Token kadaluarsa. Silakan reconnect Google di halaman Apps.";
+  }
+  return msg;
 }
 
 async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {

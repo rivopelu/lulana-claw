@@ -153,7 +153,10 @@ export default class GoogleService {
       `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`,
       { headers: { Authorization: `Bearer ${accessToken}` } },
     );
-    if (!resp.ok) throw new Error(`Calendar list failed: ${resp.statusText}`);
+    if (!resp.ok) {
+      const detail = await resp.text().catch(() => resp.statusText);
+      throw new Error(`Calendar list failed: ${resp.status} ${detail}`);
+    }
     const data = (await resp.json()) as { items: CalendarEvent[] };
     return data.items ?? [];
   }
@@ -195,7 +198,9 @@ export default class GoogleService {
     body: string,
   ): Promise<void> {
     const raw = btoa(
-      `To: ${to}\r\nSubject: ${subject}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n${body}`,
+      unescape(encodeURIComponent(
+        `To: ${to}\r\nSubject: ${subject}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n${body}`
+      )),
     )
       .replace(/\+/g, "-")
       .replace(/\//g, "_")
@@ -209,7 +214,10 @@ export default class GoogleService {
       },
       body: JSON.stringify({ raw }),
     });
-    if (!resp.ok) throw new Error(`Gmail send failed: ${resp.statusText}`);
+    if (!resp.ok) {
+      const detail = await resp.text().catch(() => resp.statusText);
+      throw new Error(`Gmail send failed: ${resp.status} ${detail}`);
+    }
   }
 
   async listEmails(accessToken: string, max = 5): Promise<{ from: string; subject: string; snippet: string }[]> {

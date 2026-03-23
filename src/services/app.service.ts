@@ -3,6 +3,7 @@ import { NotFoundException } from "../libs/exception";
 import AppConnectionRepository from "../repositories/app-connection.repository";
 import type { AppConnection } from "../entities/pg/app-connection.entity";
 import GoogleService from "./google.service";
+import ChatService from "./chat.service";
 
 export interface ResponseAppConnection {
   id: string;
@@ -39,6 +40,7 @@ export default class AppService {
     // Upsert — replace existing Google connection if any
     const existing = await this.repo.findByAccountIdAndType(accountId, "google");
     if (existing) {
+      ChatService.calendarForbidden.delete(accountId);
       await this.repo.update(existing.id, {
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token ?? existing.refresh_token,
@@ -53,6 +55,9 @@ export default class AppService {
       const updated = (await this.repo.findById(existing.id))!;
       return toResponse(updated);
     }
+
+    // Clear forbidden cache so calendar is retried with new token
+    ChatService.calendarForbidden.delete(accountId);
 
     const conn = await this.repo.save({
       id: generateId(),
