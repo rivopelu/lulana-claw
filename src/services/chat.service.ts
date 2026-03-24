@@ -38,7 +38,8 @@ TIDAK PEDULI apakah kalimatnya perintah, pernyataan, atau cerita santai:
 
 ### KAPAN MEMBUAT BUDGET_START:
 - Pengguna menyebut budget untuk suatu kegiatan: "mau jalan-jalan budget 1 juta", "belanja modal 500rb", "trip ke bali budget 3 juta"
-- Buat HANYA jika belum ada sesi aktif untuk kegiatan yang sama
+- JANGAN buat BUDGET_START jika sudah ada '### SESI BUDGET AKTIF' di konteks — gunakan sesi yang sudah ada
+- JANGAN buat BUDGET_START hanya karena ada pengeluaran yang disebutkan — EXPENSE_LOG sudah cukup jika sesi sudah ada
 
 ### KAPAN MEMBUAT BUDGET_END:
 - Pengguna mengakhiri kegiatan: "selesai jalan-jalan", "udah pulang", "trip selesai", "belanjanya udah"
@@ -503,7 +504,14 @@ Kamu sedang berada di grup chat. Pesan dari pengguna diformat sebagai [NamaPengi
         }
       } else if (action === "BUDGET_START") {
         if (args.title && args.budget_amount) {
-          try {
+          // Guard: skip if an active session with the same title already exists
+          const titleLower = str(args.title).toLowerCase();
+          const duplicate = activeBudgetSessions.find(
+            (s) => s.title.toLowerCase() === titleLower,
+          );
+          if (duplicate) {
+            logger.info(`${label} BUDGET_START skipped — active session already exists: ${duplicate.id}`);
+          } else try {
             const budgetSession = await this.financeService.createBudgetSession(
               {
                 client_id: clientId,
