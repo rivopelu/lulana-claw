@@ -12,6 +12,7 @@ import { TaskController } from "../controllers/task.controller";
 import { AppController } from "../controllers/app.controller";
 import { ContentController } from "../controllers/content.controller";
 import { MediaController } from "../controllers/media.controller";
+import { FinanceController } from "../controllers/finance.controller";
 
 const appRoutes = new Hono();
 
@@ -28,6 +29,7 @@ const controllers = [
   AppController,
   ContentController,
   MediaController,
+  FinanceController,
 ];
 
 registerControllers(controllers, appRoutes);

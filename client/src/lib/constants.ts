@@ -13,6 +13,7 @@ export const ROUTES = {
   GOOGLE_CALLBACK: "/apps/google/callback",
   CONTENT: "/content",
   MEDIA: "/media",
+  FINANCE: "/finance",
 } as const
 
 export const API = {
@@ -76,6 +77,15 @@ export const API = {
     LIST: "media",
     UPLOAD: "media",
     DELETE: (id: string) => `media/${id}`,
+  },
+  FINANCE: {
+    SESSIONS: "finance/sessions",
+    SESSION_DETAIL: (id: string) => `finance/sessions/${id}`,
+    SESSION_COMPLETE: (id: string) => `finance/sessions/${id}/complete`,
+    SESSION_CANCEL: (id: string) => `finance/sessions/${id}/cancel`,
+    SESSION_TRANSACTIONS: (id: string) => `finance/sessions/${id}/transactions`,
+    TRANSACTIONS: "finance/transactions",
+    TRANSACTION_DETAIL: (id: string) => `finance/transactions/${id}`,
   },
   BOT: {
     STATUSES: "bot/statuses",

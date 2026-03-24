@@ -6,9 +6,43 @@ import GoogleService from "./google.service";
 import LearningService from "./learning.service";
 import SessionService, { type ChatType } from "./session.service";
 import TaskService, { parseRemindTime, type ResponseTask } from "./task.service";
+import FinanceService, { type ResponseBudgetSession } from "./finance.service";
 import VectorService from "./vector.service";
 
 const HISTORY_LIMIT = 20;
+const FINANCE_CAPABILITY_PROMPT = `
+## KEUANGAN & BUDGETING
+
+Kamu bisa mencatat pengeluaran, pemasukan, dan sesi anggaran pengguna secara real-time.
+
+### KAPAN MEMBUAT MARKER KEUANGAN:
+- Pengguna menyebut budget untuk suatu kegiatan: "budget jalan-jalan 1 juta", "mau belanja modal 500rb" → buat BUDGET_START
+- Pengguna menyebut membeli/membayar sesuatu saat sesi aktif: "beli kopi 30rb", "bayar parkir 5000", "makan 45rb" → buat EXPENSE_LOG
+- Pengguna mengakhiri kegiatan: "udah selesai jalan-jalan", "selesai belanja", "pulang" → buat BUDGET_END
+- Pengguna menerima uang: "dapat transferan 200rb" → buat EXPENSE_LOG dengan type income
+
+### KAPAN TIDAK MEMBUAT MARKER:
+- Obrolan biasa tentang harga tanpa ada transaksi nyata
+- Pertanyaan seperti "berapa harga...?"
+
+### ATURAN EKSEKUSI:
+- Marker TIDAK TERLIHAT pengguna — taruh di baris paling akhir
+- Setelah EXPENSE_LOG, sebutkan sisa budget dalam respons (ambil dari ### SESI BUDGET AKTIF)
+- JANGAN tanya konfirmasi
+
+---
+
+6. MULAI SESI BUDGET:
+[BUDGET_START:{"title":"nama kegiatan singkat","budget_amount":1000000}]
+
+7. CATAT PENGELUARAN/PEMASUKAN:
+[EXPENSE_LOG:{"budget_session_id":"8_char_session_id_atau_kosong","description":"deskripsi singkat","amount":50000,"category":"food|transport|entertainment|shopping|health|other","type":"expense|income"}]
+
+8. AKHIRI SESI BUDGET:
+[BUDGET_END:{"id":"8_char_session_id"}]
+
+Gunakan ID 8-karakter dari bagian ### SESI BUDGET AKTIF untuk EXPENSE_LOG dan BUDGET_END.`.trim();
+
 const TASK_CAPABILITY_PROMPT = `
 ## SISTEM AKSI
 
@@ -114,6 +148,7 @@ export default class ChatService {
 
   private aiService = new AiService();
   private contextService = new ContextService();
+  private financeService = new FinanceService();
   private googleService = new GoogleService();
   private learningService = new LearningService();
   private sessionService = new SessionService();
@@ -209,6 +244,26 @@ export default class ChatService {
       logger.warn(`${label} Failed to fetch tasks: ${(e as Error).message}`);
     }
 
+    // Fetch active budget sessions for this chat
+    let activeBudgetSessions: ResponseBudgetSession[] = [];
+    let budgetContext = "";
+    try {
+      activeBudgetSessions = await this.financeService.getActiveSessions(clientId, chatId);
+      if (activeBudgetSessions.length > 0) {
+        const fmt = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
+        budgetContext =
+          "### SESI BUDGET AKTIF:\n" +
+          activeBudgetSessions
+            .map(
+              (s, i) =>
+                `${i + 1}. [${s.title}] Budget: ${fmt(s.budget_amount)} | Terpakai: ${fmt(s.total_spent)} | Sisa: ${fmt(s.remaining)} - ID: ${s.id.slice(-8)}`,
+            )
+            .join("\n");
+      }
+    } catch (e) {
+      logger.warn(`${label} Failed to fetch budget sessions: ${(e as Error).message}`);
+    }
+
     // Fetch Google Calendar events if connected (skip if known forbidden)
     let googleCalendarContext = "";
     let googleConnected = false;
@@ -272,9 +327,11 @@ Kamu sedang berada di grup chat. Pesan dari pengguna diformat sebagai [NamaPengi
         ? `### LONG-TERM MEMORY (Retrieved from Database):\n${ragContext}\n*Gunakan informasi di atas jika relevan untuk menjawab pertanyaan pengguna.*`
         : "",
       pendingTasksContext ? `### CURRENT SCHEDULE/TASKS:\n${pendingTasksContext}` : "",
+      budgetContext,
       googleCalendarContext,
       googleConnected ? GOOGLE_CAPABILITY_PROMPT : "",
       `[Waktu sekarang: ${nowStr}]`,
+      FINANCE_CAPABILITY_PROMPT,
       TASK_CAPABILITY_PROMPT,
     ]
       .filter(Boolean)
@@ -412,6 +469,71 @@ Kamu sedang berada di grup chat. Pesan dari pengguna diformat sebagai [NamaPengi
           logger.error(`${label} GDOC_CREATE error: ${(e as Error).message}`);
           taskConfirmations.push(`⚠️ Gagal buat dokumen: ${googleErrorMessage(e)}`);
         }
+      } else if (action === "BUDGET_START") {
+        if (args.title && args.budget_amount) {
+          try {
+            const budgetSession = await this.financeService.createBudgetSession(
+              {
+                client_id: clientId,
+                chat_id: chatId,
+                session_id: session.id,
+                title: str(args.title),
+                budget_amount: num(args.budget_amount),
+                currency: args.currency ? str(args.currency) : "IDR",
+              },
+              aiModel.account_id,
+            );
+            taskConfirmations.push(
+              `💰 Sesi budget *${budgetSession.title}* dimulai! Budget: Rp${budgetSession.budget_amount.toLocaleString("id-ID")} [${budgetSession.id.slice(-8)}]`,
+            );
+          } catch (e) {
+            logger.error(`${label} BUDGET_START error: ${(e as Error).message}`);
+          }
+        }
+      } else if (action === "EXPENSE_LOG") {
+        if (args.description && args.amount) {
+          try {
+            const tx = await this.financeService.createTransaction(
+              {
+                client_id: clientId,
+                chat_id: chatId,
+                budget_session_id: args.budget_session_id
+                  ? (() => {
+                      const suffix = str(args.budget_session_id);
+                      return activeBudgetSessions.find((s) => s.id.endsWith(suffix))?.id;
+                    })()
+                  : undefined,
+                description: str(args.description),
+                amount: num(args.amount),
+                category: (args.category as any) || "other",
+                type: (args.type as any) || "expense",
+              },
+              aiModel.account_id,
+            );
+            const emo = tx.type === "income" ? "💵" : "💸";
+            taskConfirmations.push(
+              `${emo} *${tx.description}*: Rp${tx.amount.toLocaleString("id-ID")} [${tx.category}]`,
+            );
+          } catch (e) {
+            logger.error(`${label} EXPENSE_LOG error: ${(e as Error).message}`);
+          }
+        }
+      } else if (action === "BUDGET_END") {
+        if (args.id) {
+          try {
+            const suffix = str(args.id);
+            const target = activeBudgetSessions.find((s) => s.id.endsWith(suffix));
+            if (target) {
+              await this.financeService.completeSession(target.id, aiModel.account_id);
+              const fmt = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
+              taskConfirmations.push(
+                `✅ Sesi *${target.title}* selesai!\nTotal: ${fmt(target.total_spent)} / ${fmt(target.budget_amount)} | Sisa: ${fmt(target.remaining)}`,
+              );
+            }
+          } catch (e) {
+            logger.error(`${label} BUDGET_END error: ${(e as Error).message}`);
+          }
+        }
       } else if (action === "GLOBAL_CONTEXT_UPDATE") {
         if (args.content && str(args.content).trim()) {
           try {
@@ -430,7 +552,7 @@ Kamu sedang berada di grup chat. Pesan dari pengguna diformat sebagai [NamaPengi
 
     let reply = rawReply
       .replace(
-        /\[(TASK_CREATE|TASK_DONE|TASK_DELETE|SEND_MESSAGE|GCAL_CREATE|GCAL_LIST|GMAIL_SEND|GMAIL_LIST|GDOC_CREATE|GLOBAL_CONTEXT_UPDATE):\{[\s\S]*?\}\]/g,
+        /\[(TASK_CREATE|TASK_DONE|TASK_DELETE|SEND_MESSAGE|GCAL_CREATE|GCAL_LIST|GMAIL_SEND|GMAIL_LIST|GDOC_CREATE|GLOBAL_CONTEXT_UPDATE|BUDGET_START|EXPENSE_LOG|BUDGET_END):\{[\s\S]*?\}\]/g,
         "",
       )
       .trim();
@@ -500,6 +622,9 @@ const MARKER_ACTIONS = [
   "GMAIL_LIST",
   "GDOC_CREATE",
   "GLOBAL_CONTEXT_UPDATE",
+  "BUDGET_START",
+  "EXPENSE_LOG",
+  "BUDGET_END",
 ] as const;
 
 /**
