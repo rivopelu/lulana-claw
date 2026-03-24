@@ -13,11 +13,13 @@ import { AppController } from "../controllers/app.controller";
 import { ContentController } from "../controllers/content.controller";
 import { MediaController } from "../controllers/media.controller";
 import { FinanceController } from "../controllers/finance.controller";
+import { ThreadsWebhookController } from "../controllers/threads-webhook.controller";
 
 const appRoutes = new Hono();
 
 const controllers = [
   PingController,
+  ThreadsWebhookController,
   AuthController,
   MasterController,
   ClientController,

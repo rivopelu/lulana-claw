@@ -50,7 +50,9 @@ async function startActiveBots(): Promise<void> {
     allClients.map(async (client) => {
       const tokenCred = await credRepo.findByClientIdAndKey(client.id, "bot_token");
       if (!tokenCred) {
-        logger.warn(`[${client.platform}] Skipping client "${client.name}" — no bot_token credential`);
+        logger.warn(
+          `[${client.platform}] Skipping client "${client.name}" — no bot_token credential`,
+        );
         return;
       }
       if (client.platform === "telegram") {
@@ -100,16 +102,20 @@ function startContentSchedulers(): void {
       const accounts = await accountRepo.findAll();
       logger.info(`[ContentScheduler] Daily generation for ${accounts.length} account(s)`);
       await Promise.allSettled(
-        accounts.map((acc) => contentService.generate(acc.id).catch((e) => {
-          logger.warn(`[ContentScheduler] Skipped account ${acc.id}: ${e.message}`);
-        })),
+        accounts.map((acc) =>
+          contentService.generate(acc.id).catch((e) => {
+            logger.warn(`[ContentScheduler] Skipped account ${acc.id}: ${e.message}`);
+          }),
+        ),
       );
     } catch (err) {
       logger.error(`[ContentScheduler] Daily generation error: ${(err as Error).message}`);
     }
   }, 60_000);
 
-  logger.info(`[ContentScheduler] Publish + daily generation schedulers started (generate at ${env.CONTENT_GENERATE_HOUR}:00)`);
+  logger.info(
+    `[ContentScheduler] Publish + daily generation schedulers started (generate at ${env.CONTENT_GENERATE_HOUR}:00)`,
+  );
 }
 
 async function seedGlobalContexts(): Promise<void> {
@@ -121,7 +127,9 @@ async function seedGlobalContexts(): Promise<void> {
       accounts.map((acc) => contextService.ensureCapabilitiesContext(acc.id)),
     );
     if (accounts.length > 0) {
-      logger.info(`[Startup] Platform capabilities context seeded for ${accounts.length} account(s)`);
+      logger.info(
+        `[Startup] Platform capabilities context seeded for ${accounts.length} account(s)`,
+      );
     }
   } catch (err) {
     logger.warn(`[Startup] Could not seed capabilities context: ${(err as Error).message}`);

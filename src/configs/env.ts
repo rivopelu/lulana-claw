@@ -34,6 +34,7 @@ const envSchema = z.object({
   // Threads (optional — separate access token with threads_basic + threads_content_publish scope)
   THREADS_USER_ID: z.string().optional(),
   THREADS_ACCESS_TOKEN: z.string().optional(),
+  THREADS_VERIFY_TOKEN: z.string().optional(),
 
   // Supabase Storage (for content asset uploads)
   SUPABASE_URL: z.string().optional(),
