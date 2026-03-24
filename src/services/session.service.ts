@@ -107,6 +107,8 @@ export default class SessionService {
     fromId?: string,
     fromName?: string,
     embedding?: number[],
+    platform?: string,
+    channelName?: string,
   ): Promise<void> {
     await this.messageRepository.create({
       session_id: sessionId,
@@ -114,6 +116,8 @@ export default class SessionService {
       content,
       from_id: fromId,
       from_name: fromName,
+      platform,
+      channel_name: channelName,
       embedding,
     });
   }

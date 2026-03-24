@@ -148,6 +148,8 @@ class DiscordManager {
             text: userText,
             fromId,
             fromName,
+            platform: "discord",
+            channelName: channelName || fallbackName,
             aiModel,
             entityMode: clientRecord?.entity_mode,
           });

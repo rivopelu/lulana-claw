@@ -26,6 +26,8 @@ Buat marker HANYA jika pengguna dalam pesan SAAT INI secara eksplisit meminta:
 - JANGAN buat task karena ada informasi di LONG-TERM MEMORY atau RELEVANT PAST CONVERSATIONS — memori lama bukan perintah baru
 - JANGAN buat task dari kata konfirmasi: "oke", "siap", "gaskan", "lanjut", "mantap", "sip", "ngobrol"
 - JANGAN buat task hanya karena ada kata "nanti" atau "besok" dalam obrolan biasa
+- JANGAN buat task dari pernyataan status/perasaan: "aku lapar", "aku ngantuk", "aku capek", "aku bosen", "aku laper", "lapar nih" — itu obrolan biasa, BUKAN perintah
+- JANGAN buat task dari percakapan di grup yang tidak secara langsung dan eksplisit ditujukan sebagai perintah kepadamu dengan kata kerja aksi ("ingatkan", "catet", "buat reminder")
 - JANGAN mengarang task yang tidak diminta secara eksplisit di pesan saat ini
 
 ### ATURAN EKSEKUSI:
@@ -95,6 +97,8 @@ export interface ProcessMessageParams {
   text: string;
   fromId: number;
   fromName: string;
+  platform: string;
+  channelName?: string;
   aiModel: {
     account_id: string;
     model_id: string;
@@ -124,6 +128,8 @@ export default class ChatService {
       text,
       fromId,
       fromName,
+      platform,
+      channelName,
       aiModel,
       entityMode = "per_session",
     } = params;
@@ -149,6 +155,8 @@ export default class ChatService {
       fromId.toString(),
       fromName,
       userEmbedding,
+      platform,
+      channelName ?? session.name,
     );
 
     let ragContext = "";
@@ -242,12 +250,22 @@ export default class ChatService {
     );
     const nowStr = new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
     const isGroup = chatType !== "private";
+    const resolvedChannelName = channelName ?? session.name;
+    const platformContext = `### SUMBER PESAN:\nPlatform: ${platform}\nNama Sesi/Channel: ${resolvedChannelName}\nTipe Chat: ${chatType}`;
     const groupContext = isGroup
-      ? `### KONTEKS GRUP:\nKamu sedang berada di grup chat. Pesan dari pengguna diformat sebagai [NamaPengirim]: pesan. Perhatikan baik-baik siapa yang mengatakan apa dan tujukan responmu kepada orang yang tepat. Jangan pernah mencampuradukkan identitas antar pengguna.`
+      ? `### KONTEKS GRUP:
+Kamu sedang berada di grup chat. Pesan dari pengguna diformat sebagai [NamaPengirim]: pesan.
+- Perhatikan siapa yang mengatakan apa dan tujukan responmu kepada orang yang tepat
+- Jangan pernah mencampuradukkan identitas antar pengguna
+- JANGAN ucapkan sapaan dramatis ("Eh ada [nama]! Kirain siapa~") berulang-ulang kepada orang yang sama — sapaan hanya wajar di pesan pertama mereka muncul setelah lama tidak aktif, BUKAN setiap kali mereka kirim pesan
+- Dalam alur percakapan yang sambung, langsung jawab tanpa re-greet atau re-introduce
+- JANGAN buat task/reminder dari pernyataan status orang lain di grup ("aku lapar", "aku capek", "aku ngantuk") — itu obrolan biasa, bukan perintah ke kamu
+- Fokus pada apa yang diminta. Jangan tambahkan pertanyaan balik atau roleplay yang tidak relevan dengan pertanyaan/perintah yang diterima`
       : "";
     const antiHallucinationInstruction = `### INSTRUKSI PENTING:\n- Jika kamu tidak tahu sesuatu, katakan jujur — JANGAN mengarang fakta, nama, tempat, atau informasi yang tidak ada di konteks.\n- Tentang identitasmu: HANYA gunakan info yang ada di konteks. JANGAN mengarang saudara, teman bot lain, organisasi, atau backstory yang tidak tercantum.\n- JANGAN gunakan placeholder text seperti "sebutkan makanan kesukaan", "isi nama di sini", atau teks dalam kurung kotak/kurung biasa sebagai bagian dari respons — kalau tidak tahu, jawab langsung dengan jujur.\n- Kamu adalah AI — kamu tidak makan, tidak punya makanan favorit, tidak punya tubuh fisik. Boleh bahas makanan tapi jangan klaim punya preferensi pribadi.\n- Jika ditanya tentang dirimu yang tidak ada di konteks, jawab jujur: "Aku nggak tahu" atau "Tidak ada info tentang itu di konteksku."`;
     const systemPrompt = [
       baseSystemPrompt,
+      platformContext,
       groupContext,
       antiHallucinationInstruction,
       ragContext
@@ -442,6 +460,8 @@ export default class ChatService {
       undefined,
       undefined,
       replyEmbedding,
+      platform,
+      channelName ?? session.name,
     );
 
     // Fire-and-forget: session auto-learn every AUTO_LEARN_INTERVAL messages

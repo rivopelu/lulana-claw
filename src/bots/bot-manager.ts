@@ -88,6 +88,9 @@ class BotManager {
 
       const fromId = ctx.from?.id?.toString();
       const fromName = ctx.from?.first_name ?? "User";
+      const channelName = isGroup
+        ? ("title" in ctx.chat ? ctx.chat.title : undefined) ?? ctx.chat.id.toString()
+        : undefined;
       const label = `[Bot:${clientId}:${chatId}]`;
 
       // React with 👀 to indicate message has been read
@@ -128,6 +131,8 @@ class BotManager {
             text: userText,
             fromId: Number(fromId),
             fromName,
+            platform: "telegram",
+            channelName,
             aiModel,
             entityMode: clientRecord?.entity_mode,
           });
