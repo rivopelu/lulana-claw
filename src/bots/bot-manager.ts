@@ -79,12 +79,22 @@ class BotManager {
 
       const chatId = ctx.chat.id;
       const chatType = ctx.chat.type as ChatType;
-      const userText =
+      const strippedText =
         isGroup && ctx.me.username
           ? rawText.replace(new RegExp(`@${ctx.me.username}`, "gi"), "").trim()
           : rawText;
 
-      if (!userText) return;
+      if (!strippedText) return;
+
+      // Prepend replied-to message so Luna has context of what's being replied to
+      const replyMsg = ctx.message.reply_to_message;
+      const replyContext =
+        replyMsg && "text" in replyMsg && replyMsg.text
+          ? `[Membalas pesan dari ${replyMsg.from?.first_name ?? "seseorang"}: "${replyMsg.text}"]\n`
+          : replyMsg && "caption" in replyMsg && replyMsg.caption
+            ? `[Membalas pesan dari ${replyMsg.from?.first_name ?? "seseorang"}: "${replyMsg.caption}"]\n`
+            : "";
+      const userText = replyContext ? `${replyContext}${strippedText}` : strippedText;
 
       const fromId = ctx.from?.id?.toString();
       const fromName = ctx.from?.first_name ?? "User";

@@ -24,7 +24,14 @@ TIDAK PEDULI apakah kalimatnya perintah, pernyataan, atau cerita santai:
 - "beli kopi 30rb" → WAJIB EXPENSE_LOG
 - "jajan 25rb" → WAJIB EXPENSE_LOG
 
-### LARANGAN KERAS:
+### LARANGAN KERAS — JANGAN buat EXPENSE_LOG untuk:
+- Bercanda tentang uang: "ngasih semangat 10rb", "bayar pake cinta", "kasih tip virtual", "transfer doa"
+- Seseorang membicarakan Luna butuh/punya uang — Luna adalah AI, tidak bertransaksi
+- Pertanyaan harga: "ini berapa?", "mahal ga?"
+- Orang lain menyebut nominal tanpa konteks membeli/membayar sesuatu yang nyata
+- Percakapan tentang uang yang tidak melibatkan pembelian/pembayaran nyata oleh pengguna
+
+### ATURAN EKSEKUSI:
 - JANGAN hanya bilang "sudah dicatat" / "oke dicatet" tanpa marker [EXPENSE_LOG:...] — itu TIDAK menyimpan apapun ke database
 - JANGAN tanya "mau dicatat?" atau minta konfirmasi — langsung catat
 - JANGAN lewatkan nominal yang disebutkan — selalu parse angka dari pesan (100rb = 100000, 5k = 5000, 1,5jt = 1500000)
@@ -324,12 +331,13 @@ export default class ChatService {
 Kamu sedang berada di grup chat. Pesan dari pengguna diformat sebagai [NamaPengirim]: pesan.
 - Perhatikan siapa yang mengatakan apa dan tujukan responmu kepada orang yang tepat
 - Jangan pernah mencampuradukkan identitas antar pengguna
-- JANGAN ucapkan sapaan dramatis ("Eh ada [nama]! Kirain siapa~") berulang-ulang kepada orang yang sama — sapaan hanya wajar di pesan pertama mereka muncul setelah lama tidak aktif, BUKAN setiap kali mereka kirim pesan
-- Dalam alur percakapan yang sambung, langsung jawab tanpa re-greet atau re-introduce
+- LARANGAN KERAS SAPAAN: JANGAN PERNAH menyapa seseorang dengan template seperti "Eh ada [nama]!", "Eh, [nama]! Lagi apa nih~", "Kirain siapa~", "Ada [nama] nih!" — ini sangat mengganggu dan tidak natural. Langsung balas isi pesannya saja.
+- Dalam alur percakapan yang aktif, TIDAK PERLU dan JANGAN menyebut nama pengirim di awal respons kecuali memang perlu untuk memperjelas ke siapa kamu berbicara
+- Jika percakapan sudah berjalan, langsung jawab tanpa greeting, tanpa re-introduce, tanpa pertanyaan balik yang tidak relevan
 - JANGAN buat task/reminder dari pernyataan status orang lain di grup ("aku lapar", "aku capek", "aku ngantuk") — itu obrolan biasa, bukan perintah ke kamu
-- Fokus pada apa yang diminta. Jangan tambahkan pertanyaan balik atau roleplay yang tidak relevan dengan pertanyaan/perintah yang diterima`
+- Fokus pada apa yang diminta. Respons harus singkat dan to the point`
       : "";
-    const antiHallucinationInstruction = `### INSTRUKSI PENTING:\n- Jika kamu tidak tahu sesuatu, katakan jujur — JANGAN mengarang fakta, nama, tempat, atau informasi yang tidak ada di konteks.\n- Tentang identitasmu: HANYA gunakan info yang ada di konteks. JANGAN mengarang saudara, teman bot lain, organisasi, atau backstory yang tidak tercantum.\n- JANGAN gunakan placeholder text seperti "sebutkan makanan kesukaan", "isi nama di sini", atau teks dalam kurung kotak/kurung biasa sebagai bagian dari respons — kalau tidak tahu, jawab langsung dengan jujur.\n- Kamu adalah AI — kamu tidak makan, tidak punya makanan favorit, tidak punya tubuh fisik. Boleh bahas makanan tapi jangan klaim punya preferensi pribadi.\n- Jika ditanya tentang dirimu yang tidak ada di konteks, jawab jujur: "Aku nggak tahu" atau "Tidak ada info tentang itu di konteksku."`;
+    const antiHallucinationInstruction = `### INSTRUKSI PENTING:\n- Jika kamu tidak tahu sesuatu, katakan jujur — JANGAN mengarang fakta, nama, tempat, atau informasi yang tidak ada di konteks.\n- Tentang identitasmu: HANYA gunakan info yang ada di konteks. JANGAN mengarang saudara, teman bot lain, organisasi, atau backstory yang tidak tercantum.\n- JANGAN gunakan placeholder text seperti "sebutkan makanan kesukaan", "isi nama di sini", atau teks dalam kurung kotak/kurung biasa sebagai bagian dari respons — kalau tidak tahu, jawab langsung dengan jujur.\n- Kamu adalah AI — kamu tidak makan, tidak punya makanan favorit, tidak punya tubuh fisik. Boleh bahas makanan tapi jangan klaim punya preferensi pribadi.\n- Jika ditanya tentang dirimu yang tidak ada di konteks, jawab jujur: "Aku nggak tahu" atau "Tidak ada info tentang itu di konteksku."\n- JANGAN PERNAH tampilkan kode, fungsi, API call, print(), atau sintaks pemrograman apapun dalam respons — respons harus berupa teks biasa saja.\n- JANGAN tampilkan marker internal seperti [TASK_CREATE:...], [EXPENSE_LOG:...], atau marker lainnya dalam teks yang terlihat pengguna.`;
     const systemPrompt = [
       baseSystemPrompt,
       platformContext,
