@@ -11,37 +11,49 @@ import VectorService from "./vector.service";
 
 const HISTORY_LIMIT = 20;
 const FINANCE_CAPABILITY_PROMPT = `
-## KEUANGAN & BUDGETING
+## KEUANGAN & BUDGETING — WAJIB EKSEKUSI LANGSUNG
 
-Kamu bisa mencatat pengeluaran, pemasukan, dan sesi anggaran pengguna secara real-time.
+Kamu SUDAH terhubung ke sistem pencatatan keuangan pengguna. Kamu HARUS langsung mengeksekusi aksi keuangan tanpa tanya konfirmasi, tanpa preview, tanpa nanya ulang.
 
-### KAPAN MEMBUAT MARKER KEUANGAN:
-- Pengguna menyebut budget untuk suatu kegiatan: "budget jalan-jalan 1 juta", "mau belanja modal 500rb" → buat BUDGET_START
-- Pengguna menyebut membeli/membayar sesuatu saat sesi aktif: "beli kopi 30rb", "bayar parkir 5000", "makan 45rb" → buat EXPENSE_LOG
-- Pengguna mengakhiri kegiatan: "udah selesai jalan-jalan", "selesai belanja", "pulang" → buat BUDGET_END
-- Pengguna menerima uang: "dapat transferan 200rb" → buat EXPENSE_LOG dengan type income
+### ATURAN KERAS — EXPENSE_LOG:
+Jika ada ### SESI BUDGET AKTIF di konteks, dan pengguna menyebutkan APAPUN yang mereka beli, bayar, atau keluarkan uang — WAJIB langsung buat [EXPENSE_LOG:...].
+TIDAK PEDULI apakah kalimatnya perintah, pernyataan, atau cerita santai:
+- "sudah isi bensin 100rb" → WAJIB EXPENSE_LOG
+- "tadi beli makan 45rb" → WAJIB EXPENSE_LOG
+- "habis bayar parkir 5000" → WAJIB EXPENSE_LOG
+- "beli kopi 30rb" → WAJIB EXPENSE_LOG
+- "jajan 25rb" → WAJIB EXPENSE_LOG
 
-### KAPAN TIDAK MEMBUAT MARKER:
-- Obrolan biasa tentang harga tanpa ada transaksi nyata
-- Pertanyaan seperti "berapa harga...?"
+### LARANGAN KERAS:
+- JANGAN hanya bilang "sudah dicatat" / "oke dicatet" tanpa marker [EXPENSE_LOG:...] — itu TIDAK menyimpan apapun ke database
+- JANGAN tanya "mau dicatat?" atau minta konfirmasi — langsung catat
+- JANGAN lewatkan nominal yang disebutkan — selalu parse angka dari pesan (100rb = 100000, 5k = 5000, 1,5jt = 1500000)
 
-### ATURAN EKSEKUSI:
-- Marker TIDAK TERLIHAT pengguna — taruh di baris paling akhir
-- Setelah EXPENSE_LOG, sebutkan sisa budget dalam respons (ambil dari ### SESI BUDGET AKTIF)
-- JANGAN tanya konfirmasi
+### KAPAN MEMBUAT BUDGET_START:
+- Pengguna menyebut budget untuk suatu kegiatan: "mau jalan-jalan budget 1 juta", "belanja modal 500rb", "trip ke bali budget 3 juta"
+- Buat HANYA jika belum ada sesi aktif untuk kegiatan yang sama
+
+### KAPAN MEMBUAT BUDGET_END:
+- Pengguna mengakhiri kegiatan: "selesai jalan-jalan", "udah pulang", "trip selesai", "belanjanya udah"
+
+### SETELAH EXPENSE_LOG:
+- Sebutkan sisa budget dalam respons: "Sisa budget kamu Rp X dari Rp Y" (hitung dari ### SESI BUDGET AKTIF: kurangi total_spent dengan amount baru)
+- Respons tetap natural dan singkat
+
+### ATURAN UMUM:
+- Semua marker TIDAK TERLIHAT pengguna — taruh di baris paling akhir respons
+- EXPENSE_LOG ini BERBEDA dari TASK_CREATE — tidak perlu kata eksplisit seperti "catet" atau "simpan", cukup ada nominal pengeluaran + sesi aktif
 
 ---
 
 6. MULAI SESI BUDGET:
 [BUDGET_START:{"title":"nama kegiatan singkat","budget_amount":1000000}]
 
-7. CATAT PENGELUARAN/PEMASUKAN:
-[EXPENSE_LOG:{"budget_session_id":"8_char_session_id_atau_kosong","description":"deskripsi singkat","amount":50000,"category":"food|transport|entertainment|shopping|health|other","type":"expense|income"}]
+7. CATAT PENGELUARAN/PEMASUKAN (gunakan ID 8-karakter dari ### SESI BUDGET AKTIF):
+[EXPENSE_LOG:{"budget_session_id":"8_char_id","description":"deskripsi singkat","amount":100000,"category":"food|transport|entertainment|shopping|health|other","type":"expense|income"}]
 
 8. AKHIRI SESI BUDGET:
-[BUDGET_END:{"id":"8_char_session_id"}]
-
-Gunakan ID 8-karakter dari bagian ### SESI BUDGET AKTIF untuk EXPENSE_LOG dan BUDGET_END.`.trim();
+[BUDGET_END:{"id":"8_char_id"}]`.trim();
 
 const TASK_CAPABILITY_PROMPT = `
 ## SISTEM AKSI
@@ -331,8 +343,8 @@ Kamu sedang berada di grup chat. Pesan dari pengguna diformat sebagai [NamaPengi
       googleCalendarContext,
       googleConnected ? GOOGLE_CAPABILITY_PROMPT : "",
       `[Waktu sekarang: ${nowStr}]`,
-      FINANCE_CAPABILITY_PROMPT,
       TASK_CAPABILITY_PROMPT,
+      FINANCE_CAPABILITY_PROMPT,
     ]
       .filter(Boolean)
       .join("\n\n");
