@@ -112,7 +112,12 @@ class BotManager {
       }
 
       this.enqueue(clientId, chatId, async () => {
-        const session = await this.sessionService.getSession(clientId, chatId, threadId);
+        // Try thread-specific session first, fall back to main chat session
+        const session =
+          (threadId != null
+            ? (await this.sessionService.getSession(clientId, chatId, threadId)) ??
+              (await this.sessionService.getSession(clientId, chatId))
+            : await this.sessionService.getSession(clientId, chatId));
 
         if (!session) {
           await ctx.reply("⚙️ No active session.\nRun /setup <name> to get started.",
