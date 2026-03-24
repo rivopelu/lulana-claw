@@ -1,9 +1,13 @@
 import { db } from "../database/database";
 import { type Session, SessionEntity, type NewSession } from "../entities/pg/session.entity";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 export default class SessionRepository {
-  async findByClientIdAndChatId(clientId: string, chatId: number): Promise<Session | undefined> {
+  async findByClientIdAndChatId(
+    clientId: string,
+    chatId: number,
+    threadId?: number,
+  ): Promise<Session | undefined> {
     const data = await db
       .select()
       .from(SessionEntity)
@@ -11,6 +15,9 @@ export default class SessionRepository {
         and(
           eq(SessionEntity.client_id, clientId),
           eq(SessionEntity.chat_id, chatId),
+          threadId != null
+            ? eq(SessionEntity.thread_id, threadId)
+            : isNull(SessionEntity.thread_id),
           eq(SessionEntity.active, true),
         ),
       )

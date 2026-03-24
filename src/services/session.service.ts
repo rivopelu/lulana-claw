@@ -66,8 +66,8 @@ export default class SessionService {
     return session;
   }
 
-  async getSession(clientId: string, chatId: number): Promise<Session | undefined> {
-    return this.sessionRepository.findByClientIdAndChatId(clientId, chatId);
+  async getSession(clientId: string, chatId: number, threadId?: number): Promise<Session | undefined> {
+    return this.sessionRepository.findByClientIdAndChatId(clientId, chatId, threadId);
   }
 
   async findTargetSession(accountId: string, platform: string, sessionName: string) {
@@ -79,8 +79,9 @@ export default class SessionService {
     chatId: number,
     chatType: ChatType,
     fallbackName: string,
+    threadId?: number,
   ): Promise<Session> {
-    const existing = await this.getSession(clientId, chatId);
+    const existing = await this.getSession(clientId, chatId, threadId);
     if (existing) return existing;
 
     const newSession = {
@@ -88,7 +89,8 @@ export default class SessionService {
       client_id: clientId,
       chat_id: chatId,
       chat_type: chatType,
-      name: fallbackName,
+      thread_id: threadId ?? null,
+      name: threadId ? `${fallbackName} #${threadId}` : fallbackName,
       ai_model_id: null,
       created_by: "system",
     };

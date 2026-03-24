@@ -152,6 +152,7 @@ export interface ProcessMessageParams {
   fromName: string;
   platform: string;
   channelName?: string;
+  threadId?: number;
   aiModel: {
     account_id: string;
     model_id: string;
@@ -184,12 +185,15 @@ export default class ChatService {
       fromName,
       platform,
       channelName,
+      threadId,
       aiModel,
       entityMode = "per_session",
     } = params;
-    const label = `[Chat:${clientId}:${chatId}]`;
+    const label = threadId
+      ? `[Chat:${clientId}:${chatId}:thread${threadId}]`
+      : `[Chat:${clientId}:${chatId}]`;
 
-    const session = await this.sessionService.ensureSession(clientId, chatId, chatType, fromName);
+    const session = await this.sessionService.ensureSession(clientId, chatId, chatType, fromName, threadId);
 
     let userEmbedding: number[] | undefined;
     try {

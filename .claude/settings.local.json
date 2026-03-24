@@ -12,7 +12,9 @@
       "Bash(grep \"\"version\"\":*)",
       "Bash(pm2 start:*)",
       "Read(//mnt/**)",
-      "Read(//d//**)"
+      "Read(//d//**)",
+      "Bash(python3:*)",
+      "Bash(bun:*)"
     ]
   }
 }

@@ -14,6 +14,8 @@ export const SessionEntity = pgTable("session", {
   /** Telegram chat_id (can be negative for groups) */
   chat_id: bigint("chat_id", { mode: "number" }).notNull(),
   chat_type: chatTypeEnum("chat_type").notNull(),
+  /** Telegram forum topic / message_thread_id — null for non-threaded chats */
+  thread_id: bigint("thread_id", { mode: "number" }),
   /** Name set by the user via /setup <name> */
   name: varchar("name", { length: 255 }).notNull(),
   /** AI model for this specific session — overrides client-level default */

@@ -25,9 +25,9 @@ class BotManager {
   private clientRepository = new ClientRepository();
   private aiModelRepository = new AiModelRepository();
 
-  /** Enqueue work for a specific chat so messages are processed one at a time */
-  private enqueue(clientId: string, chatId: number, work: () => Promise<void>): void {
-    const key = `${clientId}:${chatId}`;
+  /** Enqueue work for a specific chat/thread so messages are processed one at a time */
+  private enqueue(clientId: string, chatId: number, work: () => Promise<void>, threadId?: number): void {
+    const key = threadId != null ? `${clientId}:${chatId}:${threadId}` : `${clientId}:${chatId}`;
     const prev = this.chatQueues.get(key) ?? Promise.resolve();
     const next = prev.then(work).catch(() => {
       /* errors handled inside work */
@@ -79,6 +79,7 @@ class BotManager {
 
       const chatId = ctx.chat.id;
       const chatType = ctx.chat.type as ChatType;
+      const threadId = ctx.message.message_thread_id ?? undefined;
       const strippedText =
         isGroup && ctx.me.username
           ? rawText.replace(new RegExp(`@${ctx.me.username}`, "gi"), "").trim()
@@ -101,7 +102,7 @@ class BotManager {
       const channelName = isGroup
         ? ("title" in ctx.chat ? ctx.chat.title : undefined) ?? ctx.chat.id.toString()
         : undefined;
-      const label = `[Bot:${clientId}:${chatId}]`;
+      const label = threadId ? `[Bot:${clientId}:${chatId}:t${threadId}]` : `[Bot:${clientId}:${chatId}]`;
 
       // React with 👀 to indicate message has been read
       try {
@@ -111,10 +112,11 @@ class BotManager {
       }
 
       this.enqueue(clientId, chatId, async () => {
-        // 1. Session check
-        const session = await this.sessionService.getSession(clientId, chatId);
+        const session = await this.sessionService.getSession(clientId, chatId, threadId);
+
         if (!session) {
-          await ctx.reply("⚙️ No active session.\nRun /setup <name> to get started.");
+          await ctx.reply("⚙️ No active session.\nRun /setup <name> to get started.",
+            threadId ? { message_thread_id: threadId } : undefined);
           return;
         }
 
@@ -122,13 +124,15 @@ class BotManager {
         const clientRecord = await this.clientRepository.findById(clientId);
         const modelId = session.ai_model_id ?? clientRecord?.ai_model_id;
         if (!modelId) {
-          await ctx.reply("⚠️ No AI model assigned.");
+          await ctx.reply("⚠️ No AI model assigned.",
+            threadId ? { message_thread_id: threadId } : undefined);
           return;
         }
 
         const aiModel = await this.aiModelRepository.findById(modelId);
         if (!aiModel) {
-          await ctx.reply("⚠️ Assigned AI model not found.");
+          await ctx.reply("⚠️ Assigned AI model not found.",
+            threadId ? { message_thread_id: threadId } : undefined);
           return;
         }
 
@@ -143,18 +147,20 @@ class BotManager {
             fromName,
             platform: "telegram",
             channelName,
+            threadId,
             aiModel,
             entityMode: clientRecord?.entity_mode,
           });
 
-          // 4. Send safe reply
+          // 4. Send reply — keep inside the same thread/topic if applicable
+          const replyOpts = threadId ? { message_thread_id: threadId } : undefined;
           try {
-            await ctx.reply(result.reply, { parse_mode: "Markdown" });
+            await ctx.reply(result.reply, { parse_mode: "Markdown", ...replyOpts });
           } catch (err) {
             logger.warn(
               `${label} Markdown reply failed, falling back to plain text: ${(err as Error).message}`,
             );
-            await ctx.reply(result.reply);
+            await ctx.reply(result.reply, replyOpts);
           }
 
           // 5. Process Cross-Platform Markers
@@ -189,7 +195,7 @@ class BotManager {
           logger.error(`${label} AI error: ${(err as Error).message}`);
           await ctx.reply("❌ Gagal mendapat respons. Coba lagi nanti.");
         }
-      });
+      }, threadId);
     });
   }
 
