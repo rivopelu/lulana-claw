@@ -5,6 +5,7 @@ import ClientRepository from "../repositories/client.repository";
 import TaskRepository from "../repositories/task.repository";
 import ChatService from "../services/chat.service";
 import SessionService, { type ChatType } from "../services/session.service";
+import { BOT_MSG } from "../prompts";
 
 export type BotStatus = "starting" | "running" | "stopping" | "stopped" | "error";
 
@@ -120,7 +121,7 @@ class BotManager {
             : await this.sessionService.getSession(clientId, chatId));
 
         if (!session) {
-          await ctx.reply("⚙️ No active session.\nRun /setup <name> to get started.",
+          await ctx.reply(BOT_MSG.NO_SESSION,
             threadId ? { message_thread_id: threadId } : undefined);
           return;
         }
@@ -129,14 +130,14 @@ class BotManager {
         const clientRecord = await this.clientRepository.findById(clientId);
         const modelId = session.ai_model_id ?? clientRecord?.ai_model_id;
         if (!modelId) {
-          await ctx.reply("⚠️ No AI model assigned.",
+          await ctx.reply(BOT_MSG.NO_AI_MODEL,
             threadId ? { message_thread_id: threadId } : undefined);
           return;
         }
 
         const aiModel = await this.aiModelRepository.findById(modelId);
         if (!aiModel) {
-          await ctx.reply("⚠️ Assigned AI model not found.",
+          await ctx.reply(BOT_MSG.AI_MODEL_NOT_FOUND,
             threadId ? { message_thread_id: threadId } : undefined);
           return;
         }
@@ -190,7 +191,7 @@ class BotManager {
                   }
                 } else {
                   await ctx.reply(
-                    `⚠️ Tidak dapat menemukan sesi '${marker.targetSessionName}' di platform ${marker.platform}.`,
+                    BOT_MSG.SESSION_NOT_FOUND(marker.targetSessionName, marker.platform),
                   );
                 }
               }
@@ -198,7 +199,7 @@ class BotManager {
           }
         } catch (err) {
           logger.error(`${label} AI error: ${(err as Error).message}`);
-          await ctx.reply("❌ Gagal mendapat respons. Coba lagi nanti.");
+          await ctx.reply(BOT_MSG.AI_ERROR);
         }
       }, threadId);
     });

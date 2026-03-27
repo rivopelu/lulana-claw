@@ -14,7 +14,9 @@
       "Read(//mnt/**)",
       "Read(//d//**)",
       "Bash(python3:*)",
-      "Bash(bun:*)"
+      "Bash(bun:*)",
+      "Bash(grep:*)",
+      "Bash(ls:*)"
     ]
   }
 }

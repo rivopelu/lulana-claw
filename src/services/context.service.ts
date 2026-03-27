@@ -5,6 +5,15 @@ import type { IContext, ContextType, ContextCategory } from "../entities/mongo/c
 import { NotFoundException } from "../libs/exception";
 import { generateId } from "../libs/string-utils";
 import logger from "../configs/logger";
+import {
+  AUTO_GLOBAL_CONTEXT_HEADER,
+  AUTO_GLOBAL_CONTEXT_NAME,
+  AUTO_SESSION_CONTEXT_PREFIX,
+  PLATFORM_CAPABILITIES_CONTEXT_NAME,
+  LUNA_PLATFORM_CAPABILITIES,
+  buildGlobalContextEntry,
+  buildContextFileContent,
+} from "../prompts";
 
 const CONTEXTS_DIR = path.resolve("contexts");
 
@@ -193,7 +202,7 @@ export default class ContextService {
     const input: CreateContextInput = {
       context_id: generateId(),
       account_id: accountId,
-      name: `auto:${sessionName}`,
+      name: `${AUTO_SESSION_CONTEXT_PREFIX}${sessionName}`,
       type: "session",
       category: "custom",
       content,
@@ -214,7 +223,7 @@ export default class ContextService {
   async appendAutoGlobalContext(accountId: string, newKnowledge: string): Promise<void> {
     const existing = await this.repository.findAutoGlobalByAccountId(accountId);
     const timestamp = new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
-    const entry = `\n\n---\n*Diperbarui: ${timestamp}*\n${newKnowledge}`;
+    const entry = buildGlobalContextEntry(timestamp, newKnowledge);
 
     if (existing) {
       const updated = (existing.content + entry).slice(-8000); // cap at 8k chars
@@ -226,10 +235,10 @@ export default class ContextService {
       const input: CreateContextInput = {
         context_id: generateId(),
         account_id: accountId,
-        name: "auto:global",
+        name: AUTO_GLOBAL_CONTEXT_NAME,
         type: "global",
         category: "knowledge",
-        content: `# Pengetahuan Global Luna (Auto-Generated)\n\nBerikut adalah pengetahuan penting yang dikumpulkan secara otomatis dari percakapan Luna.${entry}`,
+        content: `${AUTO_GLOBAL_CONTEXT_HEADER}${entry}`,
         order: 98,
       };
       const ctx = await this.repository.create(input);
@@ -245,39 +254,17 @@ export default class ContextService {
   async ensureCapabilitiesContext(accountId: string): Promise<void> {
     const existing = await this.repository.findGlobalByName(
       accountId,
-      "Luna Platform Capabilities",
+      PLATFORM_CAPABILITIES_CONTEXT_NAME,
     );
     if (existing) return;
-
-    const content = `Luna memiliki kemampuan untuk membuat dan mempublikasikan konten ke platform media sosial berikut:
-
-**Instagram**
-- Luna dapat membuat draft konten Instagram (tema, mood, visual concept, caption, hashtag)
-- Luna dapat memposting foto dan video ke Instagram Business Account
-- Konten dijadwalkan melalui dashboard Content Studio
-
-**Threads**
-- Luna dapat memposting teks, foto, dan video ke Threads
-- Threads menggunakan access token terpisah dari Instagram
-- Postingan teks dapat dilakukan tanpa media/gambar
-
-**Alur Kerja Konten:**
-1. Luna generate draft konten otomatis setiap hari atau saat diminta
-2. Pemilik/admin review dan approve draft di dashboard
-3. Setelah di-approve, konten diposting ke Instagram dan/atau Threads
-4. Luna juga bisa langsung posting saat approve dengan opsi "Post Sekarang"
-
-**Media Gallery:**
-- Luna memiliki galeri media (foto/video) yang bisa digunakan untuk konten
-- Semua media tersimpan di Supabase Storage dan dapat diakses kapan saja`;
 
     const input: CreateContextInput = {
       context_id: generateId(),
       account_id: accountId,
-      name: "Luna Platform Capabilities",
+      name: PLATFORM_CAPABILITIES_CONTEXT_NAME,
       type: "global",
       category: "knowledge",
-      content,
+      content: LUNA_PLATFORM_CAPABILITIES,
       order: 10,
     };
     const ctx = await this.repository.create(input);
@@ -288,7 +275,7 @@ export default class ContextService {
   private writeToDisk(ctx: IContext): void {
     ensureContextsDir();
     const filePath = contextFilePath(ctx);
-    const content = `# ${ctx.name}\n\n**Type**: ${ctx.type}\n**Category**: ${ctx.category}\n\n${ctx.content}`;
+    const content = buildContextFileContent(ctx.name, ctx.type, ctx.category, ctx.content);
     fs.writeFileSync(filePath, content, "utf-8");
   }
 

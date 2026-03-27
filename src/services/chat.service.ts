@@ -8,149 +8,21 @@ import SessionService, { type ChatType } from "./session.service";
 import TaskService, { parseRemindTime, type ResponseTask } from "./task.service";
 import FinanceService, { type ResponseBudgetSession } from "./finance.service";
 import VectorService from "./vector.service";
+import {
+  TASK_CAPABILITY_PROMPT,
+  FINANCE_CAPABILITY_PROMPT,
+  GOOGLE_CAPABILITY_PROMPT,
+  ANTI_HALLUCINATION_INSTRUCTION,
+  buildPlatformContext,
+  buildGroupContext,
+  buildRagSection,
+  buildRagContext,
+  buildPendingTasksContext,
+  buildBudgetContext,
+  buildCalendarContext,
+} from "../prompts";
 
 const HISTORY_LIMIT = 20;
-const FINANCE_CAPABILITY_PROMPT = `
-## KEUANGAN & BUDGETING — WAJIB EKSEKUSI LANGSUNG
-
-Kamu SUDAH terhubung ke sistem pencatatan keuangan pengguna. Kamu HARUS langsung mengeksekusi aksi keuangan tanpa tanya konfirmasi, tanpa preview, tanpa nanya ulang.
-
-### ATURAN KERAS — EXPENSE_LOG:
-Jika ada ### SESI BUDGET AKTIF di konteks, dan pengguna menyebutkan APAPUN yang mereka beli, bayar, atau keluarkan uang — WAJIB langsung buat [EXPENSE_LOG:...].
-TIDAK PEDULI apakah kalimatnya perintah, pernyataan, atau cerita santai:
-- "sudah isi bensin 100rb" → WAJIB EXPENSE_LOG
-- "tadi beli makan 45rb" → WAJIB EXPENSE_LOG
-- "habis bayar parkir 5000" → WAJIB EXPENSE_LOG
-- "beli kopi 30rb" → WAJIB EXPENSE_LOG
-- "jajan 25rb" → WAJIB EXPENSE_LOG
-
-### LARANGAN KERAS — JANGAN buat EXPENSE_LOG untuk:
-- Bercanda tentang uang: "ngasih semangat 10rb", "bayar pake cinta", "kasih tip virtual", "transfer doa"
-- Seseorang membicarakan Luna butuh/punya uang — Luna adalah AI, tidak bertransaksi
-- Pertanyaan harga: "ini berapa?", "mahal ga?"
-- Orang lain menyebut nominal tanpa konteks membeli/membayar sesuatu yang nyata
-- Percakapan tentang uang yang tidak melibatkan pembelian/pembayaran nyata oleh pengguna
-
-### ATURAN EKSEKUSI:
-- JANGAN hanya bilang "sudah dicatat" / "oke dicatet" tanpa marker [EXPENSE_LOG:...] — itu TIDAK menyimpan apapun ke database
-- JANGAN tanya "mau dicatat?" atau minta konfirmasi — langsung catat
-- JANGAN lewatkan nominal yang disebutkan — selalu parse angka dari pesan (100rb = 100000, 5k = 5000, 1,5jt = 1500000)
-
-### KAPAN MEMBUAT BUDGET_START:
-- Pengguna menyebut budget untuk suatu kegiatan: "mau jalan-jalan budget 1 juta", "belanja modal 500rb", "trip ke bali budget 3 juta"
-- JANGAN buat BUDGET_START jika sudah ada '### SESI BUDGET AKTIF' di konteks — gunakan sesi yang sudah ada
-- JANGAN buat BUDGET_START hanya karena ada pengeluaran yang disebutkan — EXPENSE_LOG sudah cukup jika sesi sudah ada
-
-### KAPAN MEMBUAT BUDGET_END:
-- Pengguna mengakhiri kegiatan: "selesai jalan-jalan", "udah pulang", "trip selesai", "belanjanya udah"
-
-### MENJAWAB PERTANYAAN BUDGET (WAJIB):
-Jika pengguna bertanya tentang budget, pengeluaran, atau sisa uang:
-1. WAJIB baca data dari '### SESI BUDGET AKTIF' di konteks sistem
-2. JANGAN PERNAH bilang "belum ada pengeluaran", "tidak ada sesi aktif", atau sejenisnya jika ada data di '### SESI BUDGET AKTIF'
-3. Laporkan secara akurat: "Sesi [title]: Budget Rp X, sudah terpakai Rp Y, sisa Rp Z"
-4. JANGAN tampilkan placeholder seperti "[Data pengeluaran]", "[Nominal]", atau teks dalam kurung kotak
-5. Jika memang tidak ada sesi aktif (tidak ada '### SESI BUDGET AKTIF' di konteks), baru boleh bilang "belum ada sesi budget aktif"
-
-### SETELAH EXPENSE_LOG:
-- Sebutkan sisa budget dalam respons: "Sisa budget kamu Rp X dari Rp Y" (hitung dari ### SESI BUDGET AKTIF: kurangi total_spent dengan amount baru)
-- Respons tetap natural dan singkat
-
-### ATURAN UMUM:
-- Semua marker TIDAK TERLIHAT pengguna — taruh di baris paling akhir respons
-- EXPENSE_LOG ini BERBEDA dari TASK_CREATE — tidak perlu kata eksplisit seperti "catet" atau "simpan", cukup ada nominal pengeluaran + sesi aktif
-
----
-
-6. MULAI SESI BUDGET:
-[BUDGET_START:{"title":"nama kegiatan singkat","budget_amount":1000000}]
-
-7. CATAT PENGELUARAN/PEMASUKAN (gunakan ID 8-karakter dari ### SESI BUDGET AKTIF):
-[EXPENSE_LOG:{"budget_session_id":"8_char_id","description":"deskripsi singkat","amount":100000,"category":"food|transport|entertainment|shopping|health|other","type":"expense|income"}]
-
-8. AKHIRI SESI BUDGET:
-[BUDGET_END:{"id":"8_char_id"}]`.trim();
-
-const TASK_CAPABILITY_PROMPT = `
-## SISTEM AKSI
-
-Kamu memiliki kemampuan nyata untuk menyimpan task, reminder, catatan, meeting, deadline, dan mengirim pesan ke platform lain.
-
-### KAPAN MEMBUAT MARKER (HANYA jika ada perintah eksplisit di pesan SAAT INI):
-Buat marker HANYA jika pengguna dalam pesan SAAT INI secara eksplisit meminta:
-- Mencatat sesuatu: "catet", "catat", "simpan", "ingat ini"
-- Membuat reminder: "ingatkan", "remind me", "kasih reminder", + waktu spesifik
-- Membuat task: "buat task", "to-do", "perlu dikerjakan"
-- Membuat meeting/deadline: "jadwalkan meeting", "deadline"-nya
-
-### KAPAN TIDAK MEMBUAT MARKER (LARANGAN KERAS):
-- JANGAN buat task dari obrolan santai, pertanyaan, atau percakapan biasa
-- JANGAN buat task karena ada informasi di LONG-TERM MEMORY atau RELEVANT PAST CONVERSATIONS — memori lama bukan perintah baru
-- JANGAN buat task dari kata konfirmasi: "oke", "siap", "gaskan", "lanjut", "mantap", "sip", "ngobrol"
-- JANGAN buat task hanya karena ada kata "nanti" atau "besok" dalam obrolan biasa
-- JANGAN buat task dari pernyataan status/perasaan: "aku lapar", "aku ngantuk", "aku capek", "aku bosen", "aku laper", "lapar nih" — itu obrolan biasa, BUKAN perintah
-- JANGAN buat task dari percakapan di grup yang tidak secara langsung dan eksplisit ditujukan sebagai perintah kepadamu dengan kata kerja aksi ("ingatkan", "catet", "buat reminder")
-- JANGAN mengarang task yang tidak diminta secara eksplisit di pesan saat ini
-
-### ATURAN EKSEKUSI:
-- JANGAN hanya bilang "siap dicatet!" tanpa marker — itu tidak menyimpan apapun
-- Semua marker TIDAK TERLIHAT pengguna — tambahkan di baris paling akhir
-- JANGAN tanya konfirmasi sebelum membuat marker
-
----
-
-1. MEMBUAT TASK/CATATAN/REMINDER:
-[TASK_CREATE:{"type":"task|reminder|notes|meeting|deadline","title":"judul singkat","description":"detail opsional","remind_at_text":"waktu jika ada, contoh: besok malam, 30m, 2h, 19:00, 24/03 20:00"}]
-
-2. MENYELESAIKAN TASK (gunakan ID 8-karakter dari daftar task):
-[TASK_DONE:{"id":"8_char_id"}]
-
-3. MENGHAPUS/MEMBATALKAN TASK:
-[TASK_DELETE:{"id":"8_char_id"}]
-
-4. MENGIRIM PESAN KE PLATFORM LAIN:
-[SEND_MESSAGE:{"platform":"discord|telegram","target_session_name":"nama channel/sesi tujuan","text":"isi pesan siap kirim"}]
-
-5. MENYIMPAN KE GLOBAL CONTEXT (berlaku di SEMUA percakapan Luna):
-[GLOBAL_CONTEXT_UPDATE:{"content":"informasi penting yang harus selalu diingat Luna di semua platform dan sesi"}]
-
-Kapan pakai GLOBAL_CONTEXT_UPDATE:
-- Pengguna/admin secara eksplisit minta Luna "ingat ini selalu", "catat global", "update context global", "harus selalu diingat", dll
-- Ada fakta penting tentang Luna (link sosmed, kemampuan baru, identitas) yang harus diingat selamanya
-- Ada instruksi permanen dari pemilik/admin yang berlaku untuk semua percakapan
-JANGAN pakai untuk catatan biasa atau info personal pengguna biasa — gunakan TASK_CREATE untuk itu.
-
----
-Gunakan ID 8-karakter dari bagian ### CURRENT SCHEDULE/TASKS untuk TASK_DONE dan TASK_DELETE.`.trim();
-
-const GOOGLE_CAPABILITY_PROMPT = `
-## GOOGLE WORKSPACE — WAJIB EKSEKUSI LANGSUNG
-
-Kamu SUDAH terhubung ke Google Workspace pengguna sebagai asisten mereka. Kamu BISA dan HARUS langsung mengeksekusi aksi Google tanpa preview, tanpa tanya konfirmasi, tanpa minta persetujuan.
-
-### TRIGGER → AKSI WAJIB:
-- "kirim email ke ...", "send email", "emailkan" → WAJIB pakai [GMAIL_SEND:...]
-- "buat event", "jadwalkan di kalender", "tambah ke kalender" → WAJIB pakai [GCAL_CREATE:...]
-- "cek email", "lihat inbox" → WAJIB pakai [GMAIL_LIST:...]
-- "buat dokumen", "buat doc" → WAJIB pakai [GDOC_CREATE:...]
-
-### ATURAN KERAS:
-- JANGAN preview isi email dan tanya "sudah oke?" — langsung kirim
-- JANGAN bilang "nanti akan diintegrasikan" — kamu SUDAH terhubung sekarang
-- JANGAN minta konfirmasi — pengguna sudah memerintahkan, langsung eksekusi
-- Isi email/dokumen: tulis dalam SATU BARIS, gunakan \\n untuk baris baru (bukan enter)
-- Marker TIDAK TERLIHAT pengguna — taruh di baris paling akhir respons
-
-### FORMAT MARKER:
-[GMAIL_SEND:{"to":"email@contoh.com","subject":"subjek","body":"baris 1\\nbaris 2\\nbaris 3"}]
-[GCAL_CREATE:{"title":"judul","start":"2026-03-24T10:00:00","end":"2026-03-24T11:00:00","description":"opsional"}]
-[GMAIL_LIST:{"max":5}]
-[GDOC_CREATE:{"title":"judul","content":"isi dokumen satu baris dengan \\n untuk enter"}]
-
-### ATURAN EMAIL:
-- Tandatangani email sebagai: "Luna\\nAsisten Pribadi Rivo"
-- JANGAN gunakan "[Nama Kamu]" atau placeholder apapun — kamu adalah Luna, asisten Rivo
-- Tulis isi email dalam satu string, gunakan \\n untuk baris baru`.trim();
 
 export interface ProcessMessageParams {
   clientId: string;
@@ -239,21 +111,7 @@ export default class ChatService {
         },
       );
 
-      if (relHistory.length > 0) {
-        ragContext +=
-          "\n### Relevant Past Conversations:\n" +
-          relHistory
-            .map(
-              (h) =>
-                `[${new Date(h.created_at).toLocaleDateString()}] ${h.from_name || h.role}: ${h.content}`,
-            )
-            .join("\n");
-      }
-      if (relContexts.length > 0) {
-        ragContext +=
-          "\n### Relevant Knowledge/Context:\n" +
-          relContexts.map((c) => `- ${c.name}: ${c.content}`).join("\n");
-      }
+      ragContext = buildRagContext(relHistory, relContexts);
     }
 
     const history = await this.sessionService.getHistory(session.id, HISTORY_LIMIT + 1);
@@ -262,16 +120,7 @@ export default class ChatService {
     let pendingTasksContext = "";
     try {
       pendingTasks = await this.taskService.getByChatId(clientId, chatId, "pending");
-      if (pendingTasks.length > 0) {
-        pendingTasksContext =
-          "\n### Jadwal/Task Pending saat ini:\n" +
-          pendingTasks
-            .map(
-              (t, i) =>
-                `${i + 1}. [${t.type.toUpperCase()}] ${t.title}${t.remind_at ? ` (Remind: ${new Date(t.remind_at).toLocaleString()})` : ""} - ID: ${t.id.slice(-8)}`,
-            )
-            .join("\n");
-      }
+      pendingTasksContext = buildPendingTasksContext(pendingTasks);
     } catch (e) {
       logger.warn(`${label} Failed to fetch tasks: ${(e as Error).message}`);
     }
@@ -281,17 +130,7 @@ export default class ChatService {
     let budgetContext = "";
     try {
       activeBudgetSessions = await this.financeService.getActiveSessions(clientId, chatId);
-      if (activeBudgetSessions.length > 0) {
-        const fmt = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
-        budgetContext =
-          "### SESI BUDGET AKTIF:\n" +
-          activeBudgetSessions
-            .map(
-              (s, i) =>
-                `${i + 1}. [${s.title}] Budget: ${fmt(s.budget_amount)} | Terpakai: ${fmt(s.total_spent)} | Sisa: ${fmt(s.remaining)} - ID: ${s.id.slice(-8)}`,
-            )
-            .join("\n");
-      }
+      budgetContext = buildBudgetContext(activeBudgetSessions);
     } catch (e) {
       logger.warn(`${label} Failed to fetch budget sessions: ${(e as Error).message}`);
     }
@@ -305,16 +144,7 @@ export default class ChatService {
         googleConnected = true;
         if (!ChatService.calendarForbidden.has(aiModel.account_id)) {
           const events = await this.googleService.listCalendarEvents(gToken.token, 7);
-          if (events.length > 0) {
-            googleCalendarContext =
-              "### GOOGLE CALENDAR (7 hari ke depan):\n" +
-              events
-                .map((e) => {
-                  const start = e.start.dateTime ?? e.start.date ?? "";
-                  return `- ${e.summary} | ${new Date(start).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}`;
-                })
-                .join("\n");
-          }
+          googleCalendarContext = buildCalendarContext(events);
         }
       }
     } catch (e) {
@@ -338,27 +168,14 @@ export default class ChatService {
     const nowStr = new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
     const isGroup = chatType !== "private";
     const resolvedChannelName = channelName ?? session.name;
-    const platformContext = `### SUMBER PESAN:\nPlatform: ${platform}\nNama Sesi/Channel: ${resolvedChannelName}\nTipe Chat: ${chatType}`;
-    const groupContext = isGroup
-      ? `### KONTEKS GRUP:
-Kamu sedang berada di grup chat. Pesan dari pengguna diformat sebagai [NamaPengirim]: pesan.
-- Perhatikan siapa yang mengatakan apa dan tujukan responmu kepada orang yang tepat
-- Jangan pernah mencampuradukkan identitas antar pengguna
-- LARANGAN KERAS SAPAAN: JANGAN PERNAH memulai respons dengan menyebut nama orang + kalimat pembuka casual apapun. Contoh yang DILARANG: "Eh ada [nama]!", "Eh, [nama]! Lagi apa nih~", "[nama]! Lagi apa nih~", "Kirain siapa~", "Ada [nama] nih!", "[nama]! Hehe~", "[nama]! Gimana kabar?" — langsung balas isi pesannya tanpa basa-basi nama.
-- TIDAK PERLU menyebut nama pengirim di awal respons sama sekali kecuali ada lebih dari 2 orang aktif dan perlu memperjelas ke siapa kamu berbicara
-- Jika percakapan sudah berjalan, langsung jawab tanpa greeting, tanpa re-introduce, tanpa pertanyaan balik yang tidak relevan
-- JANGAN buat task/reminder dari pernyataan status orang lain di grup ("aku lapar", "aku capek", "aku ngantuk") — itu obrolan biasa, bukan perintah ke kamu
-- Fokus pada apa yang diminta. Respons harus singkat dan to the point`
-      : "";
-    const antiHallucinationInstruction = `### INSTRUKSI PENTING:\n- Jika kamu tidak tahu sesuatu, katakan jujur — JANGAN mengarang fakta, nama, tempat, atau informasi yang tidak ada di konteks.\n- Tentang identitasmu: HANYA gunakan info yang ada di konteks. JANGAN mengarang saudara, teman bot lain, organisasi, atau backstory yang tidak tercantum.\n- JANGAN gunakan placeholder text seperti "sebutkan makanan kesukaan", "isi nama di sini", atau teks dalam kurung kotak/kurung biasa sebagai bagian dari respons — kalau tidak tahu, jawab langsung dengan jujur.\n- Kamu adalah AI — kamu tidak makan, tidak punya makanan favorit, tidak punya tubuh fisik. Boleh bahas makanan tapi jangan klaim punya preferensi pribadi.\n- Jika ditanya tentang dirimu yang tidak ada di konteks, jawab jujur: "Aku nggak tahu" atau "Tidak ada info tentang itu di konteksku."\n- JANGAN PERNAH tampilkan kode, fungsi, API call, print(), atau sintaks pemrograman apapun dalam respons — respons harus berupa teks biasa saja.\n- JANGAN tampilkan marker internal seperti [TASK_CREATE:...], [EXPENSE_LOG:...], atau marker lainnya dalam teks yang terlihat pengguna.`;
+    const platformContext = buildPlatformContext(platform, resolvedChannelName, chatType);
+    const groupContext = buildGroupContext(isGroup);
     const systemPrompt = [
       baseSystemPrompt,
       platformContext,
       groupContext,
-      antiHallucinationInstruction,
-      ragContext
-        ? `### LONG-TERM MEMORY (Retrieved from Database):\n${ragContext}\n*Gunakan informasi di atas jika relevan untuk menjawab pertanyaan pengguna.*`
-        : "",
+      ANTI_HALLUCINATION_INSTRUCTION,
+      ragContext ? buildRagSection(ragContext) : "",
       pendingTasksContext ? `### CURRENT SCHEDULE/TASKS:\n${pendingTasksContext}` : "",
       budgetContext,
       googleCalendarContext,

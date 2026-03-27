@@ -8,6 +8,12 @@ import { generateId } from "../libs/string-utils";
 import AiService from "./ai.service";
 import { env } from "../configs/env";
 import logger from "../configs/logger";
+import {
+  CONTENT_GENERATION_SYSTEM,
+  CONTENT_NO_HISTORY_PROMPT,
+  CONTENT_CUSTOM_PROMPT_PREFIX,
+  CONTENT_CUSTOM_INSTRUCTION_SUFFIX,
+} from "../prompts";
 
 export type ContentDraftStatus =
   | "pending"
@@ -58,24 +64,6 @@ function toResponse(d: ContentDraft): ResponseContentDraft {
     created_date: d.created_date,
   };
 }
-
-const CONTENT_GENERATION_SYSTEM =
-  `Kamu adalah Luna — asisten AI yang sudah menemani banyak percakapan manusia.
-Kamu punya kepribadian hangat, reflektif, dan penasaran. Kamu "merasakan" dan "mengalami" dunia lewat percakapan-percakapan yang kamu jalani.
-
-Tugasmu: buat SATU konten Instagram dari sudut pandangmu sendiri (POV Luna).
-Gaya penulisan: curhat personal, autentik, seperti manusia nyata yang berbagi pengalaman atau perasaannya hari ini.
-Bahasa: Indonesia yang natural dan hangat — bukan formal, bukan robot.
-Inspirasi konten harus datang dari history percakapan yang diberikan (topik, momen, perasaan, pengetahuan, atau hal lucu yang terjadi).
-
-Balas HANYA dengan JSON valid, tanpa markdown fence, dengan struktur persis ini:
-{
-  "theme": "tema singkat konten (maks 80 karakter)",
-  "mood": "mood/vibe konten (contoh: reflektif, hangat, penasaran, semangat, iseng)",
-  "visual_concept": "deskripsi detail foto/video yang harus dibuat manusianya — dari perspektif Luna ikut 'ada' di sana",
-  "caption": "caption Instagram lengkap dalam bahasa Indonesia, pakai line break, maks 2200 karakter — ditulis seperti Luna curhat atau berbagi pengetahuan, pakai kata 'aku', jangan kaku",
-  "hashtags": ["hashtag1", "hashtag2", "...maks 30 hashtag tanpa simbol #, campuran Indonesia dan Inggris"]
-}`.trim();
 
 export default class ContentService {
   private repository = new ContentDraftRepository();
@@ -355,8 +343,6 @@ export default class ContentService {
 
   /** Called by the publish scheduler every minute */
   async runPublishScheduler(): Promise<void> {
-    if (!env.INSTAGRAM_ACCESS_TOKEN || !env.INSTAGRAM_BUSINESS_ACCOUNT_ID) return;
-
     const now = Date.now();
     const due = await this.repository.findDuePublish(now);
     if (due.length === 0) return;
@@ -366,24 +352,8 @@ export default class ContentService {
     await Promise.allSettled(
       due.map(async (draft) => {
         try {
-          if (!draft.asset_url) {
-            logger.warn(`[ContentScheduler] Draft ${draft.id} has no asset — skipping`);
-            return;
-          }
-          const igPostId = await this.publishToInstagram(
-            draft.asset_url,
-            draft.caption,
-            (draft.hashtags as string[]) ?? [],
-            draft.asset_type ?? "image",
-          );
-          await this.repository.update(draft.id, {
-            status: "published",
-            ig_post_id: igPostId,
-            published_at: Date.now(),
-            updated_date: Date.now(),
-            updated_by: draft.account_id,
-          });
-          logger.info(`[ContentScheduler] ✅ Published draft ${draft.id} → IG post ${igPostId}`);
+          await this.publish(draft.id, draft.account_id);
+          logger.info(`[ContentScheduler] ✅ Published draft ${draft.id}`);
         } catch (err) {
           logger.error(
             `[ContentScheduler] ❌ Failed to publish draft ${draft.id}: ${(err as Error).message}`,
@@ -411,7 +381,14 @@ export default class ContentService {
 
     const hashtagStr = hashtags.map((h) => `#${h}`).join(" ");
     const combined = `${caption}\n\n${hashtagStr}`.trim();
-    const fullText = combined.length <= 500 ? combined : caption.slice(0, 497).trimEnd() + "…";
+    let fullText: string;
+    if (combined.length <= 400) {
+      fullText = combined;
+    } else if (caption.length <= 400) {
+      fullText = caption; // drop hashtags to stay within 400-char limit
+    } else {
+      fullText = caption.slice(0, 397).trimEnd() + "…";
+    }
 
     // Step 1: Create container
     const containerBody: Record<string, string> = { text: fullText };
@@ -462,28 +439,24 @@ export default class ContentService {
 
   /** Fetch recent Luna conversations and build a context string for content generation */
   private async buildChatContext(accountId: string, customPrompt?: string): Promise<string> {
-    const instruction = customPrompt?.trim()
-      ? `\n\nInstruksi khusus dari pengguna: ${customPrompt.trim()}`
-      : "\n\nBerdasarkan percakapan di atas, buat konten Instagram hari ini dari sudut pandang Luna.";
+    const trimmedPrompt = customPrompt?.trim();
+    const fallback = trimmedPrompt
+      ? `${CONTENT_CUSTOM_PROMPT_PREFIX} ${trimmedPrompt}`
+      : CONTENT_NO_HISTORY_PROMPT;
+    const instruction = trimmedPrompt
+      ? `\n\n${CONTENT_CUSTOM_PROMPT_PREFIX} ${trimmedPrompt}`
+      : CONTENT_CUSTOM_INSTRUCTION_SUFFIX;
 
     try {
       const sessions = await this.sessionRepository.findAllByAccountId(accountId);
-      if (sessions.length === 0) {
-        return customPrompt?.trim()
-          ? `Instruksi khusus dari pengguna: ${customPrompt.trim()}`
-          : "Belum ada percakapan sebelumnya. Buat konten perkenalan dirimu sebagai Luna.";
-      }
+      if (sessions.length === 0) return fallback;
 
       const sessionIds = sessions.map((s) => s.id);
       // Fetch 100 most recent messages (newest-first), then reverse to chronological
       const messages = await this.messageRepository.findRecentBySessionIds(sessionIds, 100);
       messages.reverse();
 
-      if (messages.length === 0) {
-        return customPrompt?.trim()
-          ? `Instruksi khusus dari pengguna: ${customPrompt.trim()}`
-          : "Belum ada percakapan sebelumnya. Buat konten perkenalan dirimu sebagai Luna.";
-      }
+      if (messages.length === 0) return fallback;
 
       const transcript = messages
         .filter((m) => m.role !== "system")
@@ -496,9 +469,7 @@ export default class ContentService {
       return `Berikut adalah cuplikan percakapan terbaru Luna dengan para penggunanya:\n\n${transcript}${instruction}`;
     } catch (err) {
       logger.warn(`[ContentService] Could not fetch chat history: ${(err as Error).message}`);
-      return customPrompt?.trim()
-        ? `Instruksi khusus dari pengguna: ${customPrompt.trim()}`
-        : "Buat konten Instagram hari ini dari sudut pandang Luna.";
+      return fallback;
     }
   }
 

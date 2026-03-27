@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { ISessionMessage } from "../entities/mongo/session-message.schema";
+import { DEFAULT_SYSTEM_PROMPT } from "../prompts";
 
 export interface AiMessage {
   role: "user" | "assistant" | "system";
@@ -15,11 +16,6 @@ export interface ChatWithToolsResult {
   text: string;
   toolCalls: ToolCall[];
 }
-
-const DEFAULT_SYSTEM_PROMPT =
-  "You are Luluna Claw, a helpful AI assistant. " +
-  "Be concise, friendly, and accurate. " +
-  "If you are asked something you don't know, say so honestly.";
 
 const BASE_URLS: Record<string, string | undefined> = {
   openai: undefined, // default OpenAI endpoint
