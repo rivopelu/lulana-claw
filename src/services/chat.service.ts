@@ -555,6 +555,7 @@ function extractMarkers(text: string): Array<{ action: string; args: Record<stri
         const args = JSON.parse(cleanJson) as Record<string, unknown>;
         results.push({ action, args });
       } catch (err) {
+        console.error(err);
         // ignore malformed marker
       }
 
