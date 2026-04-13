@@ -47,12 +47,19 @@ const GEMINI_MODELS = [
 ];
 
 const ANTHROPIC_MODELS = [
-  { id: "claude-opus-4-5", name: "Claude Opus 4.5", context_window: 200000 },
-  { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", context_window: 200000 },
-  { id: "claude-haiku-4-5", name: "Claude Haiku 4.5", context_window: 200000 },
+  { id: "claude-3-7-sonnet-20250219", name: "Claude 3.7 Sonnet", context_window: 200000 },
   { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet", context_window: 200000 },
   { id: "claude-3-5-haiku-20241022", name: "Claude 3.5 Haiku", context_window: 200000 },
   { id: "claude-3-opus-20240229", name: "Claude 3 Opus", context_window: 200000 },
+];
+
+const CLAUDE_CODE_MODELS = [
+  {
+    id: "claude-3-7-sonnet-20250219",
+    name: "Claude 3.7 Sonnet (Claude Code)",
+    context_window: 200000,
+  },
+  { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet", context_window: 200000 },
 ];
 
 const AI_MODELS_BY_PROVIDER: Record<string, typeof OPENAI_MODELS> = {
@@ -60,6 +67,7 @@ const AI_MODELS_BY_PROVIDER: Record<string, typeof OPENAI_MODELS> = {
   openrouter: OPENROUTER_MODELS,
   gemini: GEMINI_MODELS,
   anthropic: ANTHROPIC_MODELS,
+  claude_code: CLAUDE_CODE_MODELS,
 };
 
 @Controller("master")

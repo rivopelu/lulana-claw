@@ -17,6 +17,7 @@ function toResponse(m: {
   provider: string;
   api_key: string;
   active: boolean;
+  base_url?: string | null;
   created_date: number;
 }): ResponseAiModel {
   return {
@@ -26,6 +27,7 @@ function toResponse(m: {
     provider: m.provider,
     api_key_hint: maskApiKey(m.api_key),
     active: m.active,
+    base_url: m.base_url ?? undefined,
     created_date: m.created_date,
   };
 }
@@ -41,6 +43,7 @@ export default class AiModelService {
       model_id: body.model_id,
       provider: body.provider,
       api_key: body.api_key,
+      base_url: body.base_url,
       created_by: accountId,
     });
   }
@@ -64,9 +67,10 @@ export default class AiModelService {
       ...(body.name && { name: body.name }),
       ...(body.model_id && { model_id: body.model_id }),
       ...(body.provider && {
-        provider: body.provider as "openai" | "openrouter" | "gemini" | "anthropic",
+        provider: body.provider as any,
       }),
       ...(body.api_key && { api_key: body.api_key }),
+      ...(body.base_url !== undefined && { base_url: body.base_url }),
       updated_by: accountId,
       updated_date: Date.now(),
     });

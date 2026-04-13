@@ -1,0 +1,1 @@
+ALTER TABLE "ai_model" ADD COLUMN "base_url" varchar(500);

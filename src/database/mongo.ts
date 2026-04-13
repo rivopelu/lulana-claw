@@ -14,6 +14,21 @@ function buildMongoUri(): string {
 
 export async function connectMongo(): Promise<void> {
   const uri = buildMongoUri();
-  await mongoose.connect(uri);
+
+  mongoose.connection.on("error", (err) => {
+    logger.error(`[MongoDB] Connection error: ${err.message}`);
+  });
+
+  mongoose.connection.on("disconnected", () => {
+    logger.warn("[MongoDB] Disconnected. Attempting to reconnect...");
+  });
+
+  await mongoose.connect(uri, {
+    autoIndex: true,
+    serverSelectionTimeoutMS: 5000, // Wait 5s before failing
+    socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
+    family: 4, // Force IPv4
+  });
+
   logger.info(`🍃 MongoDB connected to ${env.MONGO_HOST}:${env.MONGO_PORT}/${env.MONGO_NAME}`);
 }

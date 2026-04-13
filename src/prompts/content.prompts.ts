@@ -12,7 +12,7 @@ Balas HANYA dengan JSON valid, tanpa markdown fence, dengan struktur persis ini:
   "theme": "tema singkat konten (maks 80 karakter)",
   "mood": "mood/vibe konten (contoh: reflektif, hangat, penasaran, semangat, iseng)",
   "visual_concept": "deskripsi detail foto/video yang harus dibuat manusianya — dari perspektif Luna ikut 'ada' di sana",
-  "caption": "caption Instagram lengkap dalam bahasa Indonesia, pakai line break, maks 2200 karakter — ditulis seperti Luna curhat atau berbagi pengetahuan, pakai kata 'aku', jangan kaku",
+  "caption": "caption Instagram/Threads ringkas (MAKSIMAL 200 KARAKTER), bahasa Indonesia natural, pakai kata 'aku', jangan kaku",
   "hashtags": ["hashtag1", "hashtag2", "...maks 30 hashtag tanpa simbol #, campuran Indonesia dan Inggris"]
 }`.trim();
 

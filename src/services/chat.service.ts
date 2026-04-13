@@ -22,7 +22,7 @@ import {
   buildCalendarContext,
 } from "../prompts";
 
-const HISTORY_LIMIT = 20;
+const HISTORY_LIMIT = 12;
 
 export interface ProcessMessageParams {
   clientId: string;
@@ -39,6 +39,7 @@ export interface ProcessMessageParams {
     model_id: string;
     api_key: string;
     provider: string;
+    base_url?: string;
   };
   entityMode?: "single" | "per_session";
 }
@@ -126,7 +127,8 @@ export default class ChatService {
     let pendingTasksContext = "";
     try {
       pendingTasks = await this.taskService.getByChatId(clientId, chatId, "pending");
-      pendingTasksContext = buildPendingTasksContext(pendingTasks);
+      // Limit to 5 tasks to save tokens
+      pendingTasksContext = buildPendingTasksContext(pendingTasks.slice(0, 5));
     } catch (e) {
       logger.warn(`${label} Failed to fetch tasks: ${(e as Error).message}`);
     }
@@ -194,15 +196,19 @@ export default class ChatService {
       .join("\n\n");
 
     const aiText = isGroup ? `[${fromName}]: ${text}` : text;
+    // Limit history to last 15 messages to save tokens, excluding current message
+    const recentHistory = history.slice(-16, -1);
+
     const rawReply = await withRetry(
       () =>
         this.aiService.chat(
           aiModel.api_key,
           aiModel.model_id,
           aiModel.provider,
-          history.slice(0, -1),
+          recentHistory,
           aiText,
           systemPrompt,
+          aiModel.base_url,
         ),
       label,
     );

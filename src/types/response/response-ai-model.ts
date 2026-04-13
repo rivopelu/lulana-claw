@@ -5,5 +5,6 @@ export interface ResponseAiModel {
   provider: string;
   api_key_hint: string; // last 4 chars only, e.g. "...ab12"
   active: boolean;
+  base_url?: string;
   created_date: number;
 }

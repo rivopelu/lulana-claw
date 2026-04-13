@@ -127,6 +127,20 @@
       "when": 1774324933797,
       "tag": "0017_nostalgic_luminals",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1776086472395,
+      "tag": "0018_faulty_kid_colt",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1776087250942,
+      "tag": "0019_daily_photon",
+      "breakpoints": true
     }
   ]
 }

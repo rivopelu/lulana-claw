@@ -2,7 +2,7 @@ import logger from "../configs/logger";
 import SessionMessageRepository from "../repositories/session-message.repository";
 import AiService from "./ai.service";
 import ContextService from "./context.service";
-import type { ISessionMessage } from "../entities/mongo/session-message.schema";
+// import type { ISessionMessage } from "../entities/mongo/session-message.schema";
 import { GLOBAL_CONTEXT_ANALYSIS_PROMPT, CONTEXT_ANALYSIS_PROMPT } from "../prompts";
 
 export const AUTO_LEARN_INTERVAL = 50;

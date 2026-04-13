@@ -1,22 +1,4 @@
-import { useState } from "react"
-import { useNavigate } from "react-router"
-import { useForm, Controller } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { z } from "zod"
-import { Plus, Trash2, Pencil, Brain, Loader2, Eye, EyeOff, ExternalLink } from "lucide-react"
-import { PageHeader } from "@/components/layout/PageHeader"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from "@/components/ui/dialog"
+import { PageHeader } from "@/components/layout/PageHeader";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,23 +8,40 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
+} from "@/components/ui/select";
 import {
   useAiModels,
   useCreateAiModel,
-  useUpdateAiModel,
   useDeleteAiModel,
   useMasterAiModels,
-} from "@/hooks/useAiModels"
-import { ROUTES } from "@/lib/constants"
-import type { AiModel, AiProvider } from "@/types/ai-model"
+  useUpdateAiModel,
+} from "@/hooks/useAiModels";
+import { ROUTES } from "@/lib/constants";
+import type { AiModel, AiProvider } from "@/types/ai-model";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Brain, ExternalLink, Eye, EyeOff, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { Controller, useForm } from "react-hook-form";
+import { z } from "zod";
 
 // ─── Create / Edit dialog ──────────────────────────────────────────────────
 
@@ -50,39 +49,42 @@ const createSchema = z.object({
   name: z.string().min(1, "Name is required"),
   model_id: z.string().min(1, "Model is required"),
   api_key: z.string().min(10, "API key is required"),
-})
-type CreateForm = z.infer<typeof createSchema>
+  base_url: z.string().optional(),
+});
+type CreateForm = z.infer<typeof createSchema>;
 
 const editSchema = z.object({
   name: z.string().min(1, "Name is required"),
   model_id: z.string().min(1, "Model is required"),
   api_key: z.string().optional(),
-})
-type EditForm = z.infer<typeof editSchema>
+  base_url: z.string().optional(),
+});
+type EditForm = z.infer<typeof editSchema>;
 
 // ─── OpenRouter OAuth form ──────────────────────────────────────────────────
 
 const orSchema = z.object({
   name: z.string().min(1, "Label is required"),
   model_id: z.string().min(1, "Model is required"),
-})
-type OrForm = z.infer<typeof orSchema>
+});
+type OrForm = z.infer<typeof orSchema>;
 
 function OpenRouterForm({ onCancel }: { onCancel: () => void }) {
-  const navigate = useNavigate()
-  const { data: models = [] } = useMasterAiModels("openrouter")
+  const { data: models = [] } = useMasterAiModels("openrouter");
   const {
     register,
     handleSubmit,
     control,
     formState: { errors },
-  } = useForm<OrForm>({ resolver: zodResolver(orSchema) })
+  } = useForm<OrForm>({ resolver: zodResolver(orSchema) });
 
   const onSubmit = (values: OrForm) => {
-    sessionStorage.setItem("openrouter_pending", JSON.stringify(values))
-    const callbackUrl = `${window.location.origin}${ROUTES.OPENROUTER_CALLBACK}`
-    window.location.href = `https://openrouter.ai/auth?callback_url=${encodeURIComponent(callbackUrl)}`
-  }
+    sessionStorage.setItem("openrouter_pending", JSON.stringify(values));
+    const callbackUrl = `${window.location.origin}${ROUTES.OPENROUTER_CALLBACK}`;
+    window.location.assign(
+      `https://openrouter.ai/auth?callback_url=${encodeURIComponent(callbackUrl)}`,
+    );
+  };
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
@@ -133,16 +135,18 @@ function OpenRouterForm({ onCancel }: { onCancel: () => void }) {
         </Button>
       </DialogFooter>
     </form>
-  )
+  );
 }
 
 // ─── Create dialog ──────────────────────────────────────────────────────────
 
 function CreateDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const create = useCreateAiModel()
-  const [showKey, setShowKey] = useState(false)
-  const [provider, setProvider] = useState<AiProvider>("openai")
-  const { data: masterModels = [] } = useMasterAiModels(provider === "openrouter" ? "openrouter" : provider)
+  const create = useCreateAiModel();
+  const [showKey, setShowKey] = useState(false);
+  const [provider, setProvider] = useState<AiProvider>("openai");
+  const { data: masterModels = [] } = useMasterAiModels(
+    provider === "openrouter" ? "openrouter" : provider,
+  );
 
   const {
     register,
@@ -150,19 +154,19 @@ function CreateDialog({ open, onClose }: { open: boolean; onClose: () => void })
     control,
     reset,
     formState: { errors },
-  } = useForm<CreateForm>({ resolver: zodResolver(createSchema) })
+  } = useForm<CreateForm>({ resolver: zodResolver(createSchema) });
 
   const handleClose = () => {
-    reset()
-    setProvider("openai")
-    onClose()
-  }
+    reset();
+    setProvider("openai");
+    onClose();
+  };
 
   const onSubmit = async (values: CreateForm) => {
-    await create.mutateAsync({ ...values, provider })
-    reset()
-    onClose()
-  }
+    await create.mutateAsync({ ...values, provider });
+    reset();
+    onClose();
+  };
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
@@ -174,20 +178,25 @@ function CreateDialog({ open, onClose }: { open: boolean; onClose: () => void })
 
         {/* Provider selector */}
         <div className="flex rounded-lg border overflow-hidden text-sm">
-          {(["openai", "gemini", "anthropic", "openrouter"] as AiProvider[]).map((p) => (
-            <button
-              key={p}
-              type="button"
-              className={`flex-1 py-1.5 text-xs font-medium transition-colors ${
-                provider === p
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50"
-              }`}
-              onClick={() => { setProvider(p); reset() }}
-            >
-              {PROVIDER_LABEL[p]}
-            </button>
-          ))}
+          {(["openai", "gemini", "anthropic", "openrouter", "claude_code"] as AiProvider[]).map(
+            (p) => (
+              <button
+                key={p}
+                type="button"
+                className={`flex-1 py-1.5 text-xs font-medium transition-colors ${
+                  provider === p
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                }`}
+                onClick={() => {
+                  setProvider(p);
+                  reset();
+                }}
+              >
+                {PROVIDER_LABEL[p]}
+              </button>
+            ),
+          )}
         </div>
 
         {provider === "openrouter" ? (
@@ -198,9 +207,13 @@ function CreateDialog({ open, onClose }: { open: boolean; onClose: () => void })
               <Label>Label</Label>
               <Input
                 placeholder={
-                  provider === "gemini" ? "e.g. Gemini 2.0 Flash" :
-                  provider === "anthropic" ? "e.g. Claude Sonnet 4.5" :
-                  "e.g. Production GPT-4o"
+                  provider === "gemini"
+                    ? "e.g. Gemini 2.0 Flash"
+                    : provider === "anthropic"
+                      ? "e.g. Claude 3.7 Sonnet"
+                      : provider === "claude_code"
+                        ? "e.g. Claude Code (Sonnet 3.7)"
+                        : "e.g. Production GPT-4o"
                 }
                 {...register("name")}
               />
@@ -239,19 +252,32 @@ function CreateDialog({ open, onClose }: { open: boolean; onClose: () => void })
               <Label>
                 API Key
                 {provider === "gemini" && (
-                  <span className="ml-2 text-xs font-normal text-muted-foreground">— aistudio.google.com</span>
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    — aistudio.google.com
+                  </span>
                 )}
                 {provider === "anthropic" && (
-                  <span className="ml-2 text-xs font-normal text-muted-foreground">— console.anthropic.com</span>
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    — console.anthropic.com
+                  </span>
+                )}
+                {provider === "claude_code" && (
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    — Claude Code session token
+                  </span>
                 )}
               </Label>
               <div className="relative">
                 <Input
                   type={showKey ? "text" : "password"}
                   placeholder={
-                    provider === "gemini" ? "AIzaSy..." :
-                    provider === "anthropic" ? "sk-ant-..." :
-                    "sk-..."
+                    provider === "gemini"
+                      ? "AIzaSy..."
+                      : provider === "anthropic"
+                        ? "sk-ant-..."
+                        : provider === "claude_code"
+                          ? "sk-ant-sid-..."
+                          : "sk-..."
                   }
                   {...register("api_key")}
                   className="pr-10"
@@ -268,6 +294,22 @@ function CreateDialog({ open, onClose }: { open: boolean; onClose: () => void })
               {errors.api_key && (
                 <p className="text-xs text-destructive">{errors.api_key.message}</p>
               )}
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label>
+                Custom Base URL
+                <span className="ml-2 text-xs font-normal text-muted-foreground">— Optional</span>
+              </Label>
+              <Input
+                placeholder={
+                  provider === "claude_code"
+                    ? "e.g. http://38.147.122.69:3001"
+                    : "e.g. https://api.yourproxy.com/v1"
+                }
+                {...register("base_url")}
+                autoComplete="off"
+              />
             </div>
 
             {create.error && (
@@ -288,7 +330,7 @@ function CreateDialog({ open, onClose }: { open: boolean; onClose: () => void })
         )}
       </DialogContent>
     </Dialog>
-  )
+  );
 }
 
 function EditDialog({
@@ -296,14 +338,14 @@ function EditDialog({
   open,
   onClose,
 }: {
-  model: AiModel
-  open: boolean
-  onClose: () => void
+  model: AiModel;
+  open: boolean;
+  onClose: () => void;
 }) {
-  const update = useUpdateAiModel()
-  const [showKey, setShowKey] = useState(false)
-  const [provider, setProvider] = useState<AiProvider>(model.provider)
-  const { data: masterModels = [] } = useMasterAiModels(provider)
+  const update = useUpdateAiModel();
+  const [showKey, setShowKey] = useState(false);
+  const [provider, setProvider] = useState<AiProvider>(model.provider);
+  const { data: masterModels = [] } = useMasterAiModels(provider);
 
   const {
     register,
@@ -314,13 +356,13 @@ function EditDialog({
     formState: { errors },
   } = useForm<EditForm>({
     resolver: zodResolver(editSchema),
-    defaultValues: { name: model.name, model_id: model.model_id },
-  })
+    defaultValues: { name: model.name, model_id: model.model_id, base_url: model.base_url || "" },
+  });
 
   const handleProviderChange = (p: AiProvider) => {
-    setProvider(p)
-    setValue("model_id", "")
-  }
+    setProvider(p);
+    setValue("model_id", "");
+  };
 
   const onSubmit = async (values: EditForm) => {
     await update.mutateAsync({
@@ -329,12 +371,13 @@ function EditDialog({
         name: values.name,
         model_id: values.model_id,
         provider,
+        base_url: values.base_url,
         ...(values.api_key ? { api_key: values.api_key } : {}),
       },
-    })
-    reset()
-    onClose()
-  }
+    });
+    reset();
+    onClose();
+  };
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && (reset(), onClose())}>
@@ -346,20 +389,22 @@ function EditDialog({
         <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
           {/* Provider selector */}
           <div className="flex rounded-lg border overflow-hidden text-sm">
-            {(["openai", "gemini", "anthropic", "openrouter"] as AiProvider[]).map((p) => (
-              <button
-                key={p}
-                type="button"
-                className={`flex-1 py-1.5 text-xs font-medium transition-colors ${
-                  provider === p
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                }`}
-                onClick={() => handleProviderChange(p)}
-              >
-                {PROVIDER_LABEL[p]}
-              </button>
-            ))}
+            {(["openai", "gemini", "anthropic", "openrouter", "claude_code"] as AiProvider[]).map(
+              (p) => (
+                <button
+                  key={p}
+                  type="button"
+                  className={`flex-1 py-1.5 text-xs font-medium transition-colors ${
+                    provider === p
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                  }`}
+                  onClick={() => handleProviderChange(p)}
+                >
+                  {PROVIDER_LABEL[p]}
+                </button>
+              ),
+            )}
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -400,9 +445,9 @@ function EditDialog({
             <Label>
               New API Key{" "}
               <span className="text-xs text-muted-foreground font-normal">
-                (current: {model.api_key_hint})
-                {provider === "gemini" && " — aistudio.google.com"}
+                (current: {model.api_key_hint}){provider === "gemini" && " — aistudio.google.com"}
                 {provider === "anthropic" && " — console.anthropic.com"}
+                {provider === "claude_code" && " — Claude Code Token"}
               </span>
             </Label>
             <div className="relative">
@@ -423,6 +468,18 @@ function EditDialog({
             </div>
           </div>
 
+          <div className="flex flex-col gap-1.5">
+            <Label>
+              Custom Base URL
+              <span className="ml-2 text-xs font-normal text-muted-foreground">— Optional</span>
+            </Label>
+            <Input
+              placeholder="e.g. https://api.yourproxy.com/v1"
+              {...register("base_url")}
+              autoComplete="off"
+            />
+          </div>
+
           {update.error && (
             <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {(update.error as Error).message}
@@ -440,7 +497,7 @@ function EditDialog({
         </form>
       </DialogContent>
     </Dialog>
-  )
+  );
 }
 
 // ─── Main page ─────────────────────────────────────────────────────────────
@@ -450,15 +507,16 @@ const PROVIDER_LABEL: Record<string, string> = {
   openrouter: "OpenRouter",
   gemini: "Gemini",
   anthropic: "Anthropic",
-}
+  claude_code: "Claude Code",
+};
 
 export function AiModelsPage() {
-  const { data: models = [], isLoading } = useAiModels()
-  const deleteModel = useDeleteAiModel()
+  const { data: models = [], isLoading } = useAiModels();
+  const deleteModel = useDeleteAiModel();
 
-  const [createOpen, setCreateOpen] = useState(false)
-  const [editModel, setEditModel] = useState<AiModel | null>(null)
-  const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editModel, setEditModel] = useState<AiModel | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   return (
     <div>
@@ -511,18 +569,16 @@ export function AiModelsPage() {
                     <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{model.model_id}</code>
                   </td>
                   <td className="px-4 py-3">
-                    <Badge variant="secondary">{PROVIDER_LABEL[model.provider] ?? model.provider}</Badge>
+                    <Badge variant="secondary">
+                      {PROVIDER_LABEL[model.provider] ?? model.provider}
+                    </Badge>
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
                     {model.api_key_hint}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setEditModel(model)}
-                      >
+                      <Button variant="ghost" size="sm" onClick={() => setEditModel(model)}>
                         <Pencil className="mr-1.5 h-3.5 w-3.5" />
                         Edit
                       </Button>
@@ -564,8 +620,8 @@ export function AiModelsPage() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={async () => {
                 if (deleteId) {
-                  await deleteModel.mutateAsync(deleteId)
-                  setDeleteId(null)
+                  await deleteModel.mutateAsync(deleteId);
+                  setDeleteId(null);
                 }
               }}
             >
@@ -575,5 +631,5 @@ export function AiModelsPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
-  )
+  );
 }

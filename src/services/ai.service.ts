@@ -22,6 +22,7 @@ const BASE_URLS: Record<string, string | undefined> = {
   openrouter: "https://openrouter.ai/api/v1",
   gemini: "https://generativelanguage.googleapis.com/v1beta/openai/",
   anthropic: "https://api.anthropic.com/v1/",
+  claude_code: "https://api.anthropic.com/v1/",
 };
 
 export default class AiService {
@@ -35,8 +36,16 @@ export default class AiService {
     history: ISessionMessage[],
     userText: string,
     systemPrompt?: string,
+    baseUrl?: string,
   ): Promise<string> {
-    const client = new OpenAI({ apiKey, baseURL: BASE_URLS[provider] });
+    if (provider === "claude_code") {
+      return this.chatClaudeCodeProxy(apiKey, modelId, history, userText, systemPrompt, baseUrl);
+    }
+    if (provider === "anthropic") {
+      return this.chatAnthropic(apiKey, modelId, history, userText, systemPrompt, baseUrl);
+    }
+
+    const client = new OpenAI({ apiKey, baseURL: baseUrl || BASE_URLS[provider] });
 
     const messages: AiMessage[] = [
       { role: "system", content: systemPrompt?.trim() || DEFAULT_SYSTEM_PROMPT },
@@ -56,6 +65,106 @@ export default class AiService {
     return (
       response.choices[0]?.message?.content?.trim() ?? "Sorry, I could not generate a response."
     );
+  }
+
+  private async chatAnthropic(
+    apiKey: string,
+    modelId: string,
+    history: ISessionMessage[],
+    userText: string,
+    systemPrompt?: string,
+    baseUrl?: string,
+  ): Promise<string> {
+    const messages = [
+      ...history.map((m) => ({
+        role: (m.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
+        content: m.from_name && m.role === "user" ? `[${m.from_name}]: ${m.content}` : m.content,
+      })),
+      { role: "user" as const, content: userText },
+    ];
+
+    const url = baseUrl
+      ? `${baseUrl.replace(/\/$/, "")}/messages`
+      : "https://api.anthropic.com/v1/messages";
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: modelId,
+        system: systemPrompt?.trim() || DEFAULT_SYSTEM_PROMPT,
+        messages,
+        max_tokens: 4096,
+        temperature: 0.6,
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`Anthropic Error (${response.status}): ${err}`);
+    }
+
+    const data = (await response.json()) as any;
+    return data.content?.[0]?.text?.trim() ?? "Sorry, I could not generate a response.";
+  }
+
+  private async chatClaudeCodeProxy(
+    apiKey: string,
+    modelId: string,
+    history: ISessionMessage[],
+    userText: string,
+    systemPrompt?: string,
+    baseUrl?: string,
+  ): Promise<string> {
+    const staticKey = "31439d9450ee063cf0e26d2aa5551d34849f599416605236027b4f6ff3eb0763";
+    const defaultUrl = "http://38.147.122.69:3001";
+
+    const finalKey = apiKey && apiKey.length > 20 && !apiKey.includes("...") ? apiKey : staticKey;
+    const finalUrl = baseUrl || defaultUrl;
+
+    const masked = `${finalKey.slice(0, 4)}...${finalKey.slice(-4)}`;
+    console.log(`[ClaudeCodeProxy] Sending to ${finalUrl}/v1/messages with key ${masked}`);
+
+    const messages = [
+      ...history.map((m) => ({
+        role: (m.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
+        content: m.from_name && m.role === "user" ? `[${m.from_name}]: ${m.content}` : m.content,
+      })),
+      { role: "user" as const, content: userText },
+    ];
+
+    // Ensure URL points to /v1/messages
+    const url = finalUrl.endsWith("/v1")
+      ? `${finalUrl}/messages`
+      : `${finalUrl.replace(/\/$/, "")}/v1/messages`;
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "x-api-key": finalKey,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: modelId || "claude-3-7-sonnet-20250219",
+        system: systemPrompt?.trim() || DEFAULT_SYSTEM_PROMPT,
+        messages,
+        temperature: 0.6,
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      console.error(`[ClaudeCodeProxy] Error ${response.status}: ${err}`);
+      throw new Error(`Claude Code Proxy Error (${response.status}): ${err}`);
+    }
+
+    const data = (await response.json()) as any;
+    console.log(`[ClaudeCodeProxy] Success response received`);
+    // Anthropic format: data.content[0].text
+    return data.content?.[0]?.text?.trim() ?? "Sorry, I could not generate a response.";
   }
 
   /**
@@ -116,6 +225,13 @@ export default class AiService {
    * Default model: text-embedding-3-small
    */
   async generateEmbedding(apiKey: string, provider: string, text: string): Promise<number[]> {
+    // Anthropic and Claude Code don't support OpenAI embedding endpoint.
+    // Use OpenAI or Gemini if available, or skip for these providers.
+    if (provider === "anthropic" || provider === "claude_code") {
+      // Fallback or skip
+      throw new Error(`Embeddings not supported for provider: ${provider}`);
+    }
+
     const client = new OpenAI({ apiKey, baseURL: BASE_URLS[provider] });
 
     // Use a standard embedding model. Note: some providers might not support this via OpenAI SDK

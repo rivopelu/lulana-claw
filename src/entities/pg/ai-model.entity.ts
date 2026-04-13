@@ -8,6 +8,7 @@ export const aiProviderEnum = pgEnum("ai_provider", [
   "openrouter",
   "gemini",
   "anthropic",
+  "claude_code",
 ]);
 
 export const AiModelEntity = pgTable("ai_model", {
@@ -22,6 +23,8 @@ export const AiModelEntity = pgTable("ai_model", {
   provider: aiProviderEnum("provider").notNull().default("openai"),
   /** API key — stored as-is; mask on response */
   api_key: varchar("api_key", { length: 500 }).notNull(),
+  /** Optional custom base URL for proxies or specific local/shared instances */
+  base_url: varchar("base_url", { length: 500 }),
   ...baseEntity,
 });
 
