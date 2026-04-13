@@ -75,7 +75,15 @@ export function parseRemindTime(input: string): number | null {
   const full = s.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?\s+(\d{1,2}):(\d{2})$/);
   if (full) {
     const year = full[3] ? parseInt(full[3]) : new Date().getFullYear();
-    const d = new Date(year, parseInt(full[2]) - 1, parseInt(full[1]), parseInt(full[4]), parseInt(full[5]), 0, 0);
+    const d = new Date(
+      year,
+      parseInt(full[2]) - 1,
+      parseInt(full[1]),
+      parseInt(full[4]),
+      parseInt(full[5]),
+      0,
+      0,
+    );
     return d.getTime();
   }
 
@@ -116,7 +124,11 @@ export default class TaskService {
     return toResponse(task);
   }
 
-  async getByChatId(clientId: string, chatId: number, status?: Task["status"]): Promise<ResponseTask[]> {
+  async getByChatId(
+    clientId: string,
+    chatId: number,
+    status?: Task["status"],
+  ): Promise<ResponseTask[]> {
     const list = await this.repository.findByChatId(clientId, chatId, status);
     return list.map(toResponse);
   }

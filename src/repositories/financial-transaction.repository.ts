@@ -92,6 +92,9 @@ export default class FinancialTransactionRepository {
   }
 
   async update(id: string, data: Partial<NewFinancialTransaction>): Promise<void> {
-    await db.update(FinancialTransactionEntity).set(data).where(eq(FinancialTransactionEntity.id, id));
+    await db
+      .update(FinancialTransactionEntity)
+      .set(data)
+      .where(eq(FinancialTransactionEntity.id, id));
   }
 }

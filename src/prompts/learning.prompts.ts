@@ -20,7 +20,8 @@ Balas HANYA dengan JSON valid (tanpa markdown fence):
 atau
 {"is_important": false}`.trim();
 
-export const CONTEXT_ANALYSIS_PROMPT = `Kamu adalah sistem analisis memori percakapan Luna. Tugasmu menghasilkan dokumen konteks yang merangkum informasi penting dari riwayat percakapan berikut, agar Luna dapat lebih memahami pengguna di percakapan mendatang.
+export const CONTEXT_ANALYSIS_PROMPT =
+  `Kamu adalah sistem analisis memori percakapan Luna. Tugasmu menghasilkan dokumen konteks yang merangkum informasi penting dari riwayat percakapan berikut, agar Luna dapat lebih memahami pengguna di percakapan mendatang.
 
 Sertakan bagian-bagian berikut jika relevan:
 1. **Informasi Pengguna** — nama, pekerjaan, lokasi, peran, atau fakta personal yang disebutkan

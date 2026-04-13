@@ -65,10 +65,7 @@ export interface ResponseTransaction {
 
 // ─── Mappers ─────────────────────────────────────────────────────────────────
 
-function toSessionResponse(
-  s: BudgetSession,
-  totalSpent: number,
-): ResponseBudgetSession {
+function toSessionResponse(s: BudgetSession, totalSpent: number): ResponseBudgetSession {
   return {
     id: s.id,
     title: s.title,

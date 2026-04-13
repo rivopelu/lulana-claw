@@ -81,7 +81,8 @@ export default class AppService {
 
   async disconnect(id: string, accountId: string): Promise<void> {
     const conn = await this.repo.findById(id);
-    if (!conn || conn.account_id !== accountId) throw new NotFoundException("App connection not found");
+    if (!conn || conn.account_id !== accountId)
+      throw new NotFoundException("App connection not found");
     await this.repo.softDelete(id, accountId);
   }
 }

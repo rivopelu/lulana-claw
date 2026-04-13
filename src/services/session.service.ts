@@ -66,7 +66,11 @@ export default class SessionService {
     return session;
   }
 
-  async getSession(clientId: string, chatId: number, threadId?: number): Promise<Session | undefined> {
+  async getSession(
+    clientId: string,
+    chatId: number,
+    threadId?: number,
+  ): Promise<Session | undefined> {
     return this.sessionRepository.findByClientIdAndChatId(clientId, chatId, threadId);
   }
 

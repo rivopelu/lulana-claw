@@ -74,7 +74,13 @@ export default class ChatService {
       ? `[Chat:${clientId}:${chatId}:thread${threadId}]`
       : `[Chat:${clientId}:${chatId}]`;
 
-    const session = await this.sessionService.ensureSession(clientId, chatId, chatType, fromName, threadId);
+    const session = await this.sessionService.ensureSession(
+      clientId,
+      chatId,
+      chatType,
+      fromName,
+      threadId,
+    );
 
     let userEmbedding: number[] | undefined;
     try {
@@ -323,29 +329,30 @@ export default class ChatService {
         if (args.title && args.budget_amount) {
           // Guard: skip if an active session with the same title already exists
           const titleLower = str(args.title).toLowerCase();
-          const duplicate = activeBudgetSessions.find(
-            (s) => s.title.toLowerCase() === titleLower,
-          );
+          const duplicate = activeBudgetSessions.find((s) => s.title.toLowerCase() === titleLower);
           if (duplicate) {
-            logger.info(`${label} BUDGET_START skipped — active session already exists: ${duplicate.id}`);
-          } else try {
-            const budgetSession = await this.financeService.createBudgetSession(
-              {
-                client_id: clientId,
-                chat_id: chatId,
-                session_id: session.id,
-                title: str(args.title),
-                budget_amount: num(args.budget_amount),
-                currency: args.currency ? str(args.currency) : "IDR",
-              },
-              aiModel.account_id,
+            logger.info(
+              `${label} BUDGET_START skipped — active session already exists: ${duplicate.id}`,
             );
-            taskConfirmations.push(
-              `💰 Sesi budget *${budgetSession.title}* dimulai! Budget: Rp${budgetSession.budget_amount.toLocaleString("id-ID")} [${budgetSession.id.slice(-8)}]`,
-            );
-          } catch (e) {
-            logger.error(`${label} BUDGET_START error: ${(e as Error).message}`);
-          }
+          } else
+            try {
+              const budgetSession = await this.financeService.createBudgetSession(
+                {
+                  client_id: clientId,
+                  chat_id: chatId,
+                  session_id: session.id,
+                  title: str(args.title),
+                  budget_amount: num(args.budget_amount),
+                  currency: args.currency ? str(args.currency) : "IDR",
+                },
+                aiModel.account_id,
+              );
+              taskConfirmations.push(
+                `💰 Sesi budget *${budgetSession.title}* dimulai! Budget: Rp${budgetSession.budget_amount.toLocaleString("id-ID")} [${budgetSession.id.slice(-8)}]`,
+              );
+            } catch (e) {
+              logger.error(`${label} BUDGET_START error: ${(e as Error).message}`);
+            }
         }
       } else if (action === "EXPENSE_LOG") {
         if (args.description && args.amount) {

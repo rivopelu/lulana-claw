@@ -31,16 +31,15 @@ function toResponse(m: MediaAsset): ResponseMediaAsset {
 export default class MediaService {
   private repository = new MediaAssetRepository();
 
-  async upload(
-    accountId: string,
-    file: File,
-  ): Promise<ResponseMediaAsset> {
+  async upload(accountId: string, file: File): Promise<ResponseMediaAsset> {
     const ext = file.name.split(".").pop()?.toLowerCase() ?? "bin";
     const imageExts = ["jpg", "jpeg", "png", "webp", "gif"];
     const videoExts = ["mp4", "mov", "avi", "webm"];
     const assetType = imageExts.includes(ext) ? "image" : videoExts.includes(ext) ? "video" : null;
     if (!assetType) {
-      throw new Error("Unsupported file type. Allowed: jpg, jpeg, png, webp, gif, mp4, mov, avi, webm");
+      throw new Error(
+        "Unsupported file type. Allowed: jpg, jpeg, png, webp, gif, mp4, mov, avi, webm",
+      );
     }
 
     const id = generateId();

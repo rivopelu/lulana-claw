@@ -66,7 +66,10 @@ export default class LearningService {
   async runAutoLearn(params: AutoLearnParams, _messageCount?: number): Promise<string> {
     const { sessionId, accountId, clientId, sessionName, aiModel } = params;
 
-    const messages = await this.messageRepository.findBySessionId(sessionId, ANALYSIS_HISTORY_LIMIT);
+    const messages = await this.messageRepository.findBySessionId(
+      sessionId,
+      ANALYSIS_HISTORY_LIMIT,
+    );
     if (messages.length < 5) {
       logger.info(`[LearningService] Not enough messages to learn from for session ${sessionId}`);
       return "";

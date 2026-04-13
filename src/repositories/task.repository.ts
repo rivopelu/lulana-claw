@@ -21,7 +21,11 @@ export default class TaskRepository {
       .select()
       .from(TaskEntity)
       .where(
-        and(eq(TaskEntity.id, id), eq(TaskEntity.account_id, accountId), eq(TaskEntity.active, true)),
+        and(
+          eq(TaskEntity.id, id),
+          eq(TaskEntity.account_id, accountId),
+          eq(TaskEntity.active, true),
+        ),
       )
       .limit(1);
     return data[0];

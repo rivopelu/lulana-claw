@@ -27,7 +27,12 @@ class BotManager {
   private aiModelRepository = new AiModelRepository();
 
   /** Enqueue work for a specific chat/thread so messages are processed one at a time */
-  private enqueue(clientId: string, chatId: number, work: () => Promise<void>, threadId?: number): void {
+  private enqueue(
+    clientId: string,
+    chatId: number,
+    work: () => Promise<void>,
+    threadId?: number,
+  ): void {
     const key = threadId != null ? `${clientId}:${chatId}:${threadId}` : `${clientId}:${chatId}`;
     const prev = this.chatQueues.get(key) ?? Promise.resolve();
     const next = prev.then(work).catch(() => {
@@ -101,9 +106,11 @@ class BotManager {
       const fromId = ctx.from?.id?.toString();
       const fromName = ctx.from?.first_name ?? "User";
       const channelName = isGroup
-        ? ("title" in ctx.chat ? ctx.chat.title : undefined) ?? ctx.chat.id.toString()
+        ? (("title" in ctx.chat ? ctx.chat.title : undefined) ?? ctx.chat.id.toString())
         : undefined;
-      const label = threadId ? `[Bot:${clientId}:${chatId}:t${threadId}]` : `[Bot:${clientId}:${chatId}]`;
+      const label = threadId
+        ? `[Bot:${clientId}:${chatId}:t${threadId}]`
+        : `[Bot:${clientId}:${chatId}]`;
 
       // React with 👀 to indicate message has been read
       try {
@@ -112,96 +119,107 @@ class BotManager {
         /* ignore — bot may lack permission */
       }
 
-      this.enqueue(clientId, chatId, async () => {
-        // Try thread-specific session first, fall back to main chat session
-        const session =
-          (threadId != null
-            ? (await this.sessionService.getSession(clientId, chatId, threadId)) ??
-              (await this.sessionService.getSession(clientId, chatId))
-            : await this.sessionService.getSession(clientId, chatId));
+      this.enqueue(
+        clientId,
+        chatId,
+        async () => {
+          // Try thread-specific session first, fall back to main chat session
+          const session =
+            threadId != null
+              ? ((await this.sessionService.getSession(clientId, chatId, threadId)) ??
+                (await this.sessionService.getSession(clientId, chatId)))
+              : await this.sessionService.getSession(clientId, chatId);
 
-        if (!session) {
-          await ctx.reply(BOT_MSG.NO_SESSION,
-            threadId ? { message_thread_id: threadId } : undefined);
-          return;
-        }
-
-        // 2. Resolve AI model
-        const clientRecord = await this.clientRepository.findById(clientId);
-        const modelId = session.ai_model_id ?? clientRecord?.ai_model_id;
-        if (!modelId) {
-          await ctx.reply(BOT_MSG.NO_AI_MODEL,
-            threadId ? { message_thread_id: threadId } : undefined);
-          return;
-        }
-
-        const aiModel = await this.aiModelRepository.findById(modelId);
-        if (!aiModel) {
-          await ctx.reply(BOT_MSG.AI_MODEL_NOT_FOUND,
-            threadId ? { message_thread_id: threadId } : undefined);
-          return;
-        }
-
-        try {
-          // 3. Process with ChatService
-          const result = await this.chatService.processMessage({
-            clientId,
-            chatId,
-            chatType,
-            text: userText,
-            fromId: Number(fromId),
-            fromName,
-            platform: "telegram",
-            channelName,
-            threadId,
-            aiModel,
-            entityMode: clientRecord?.entity_mode,
-          });
-
-          // 4. Send reply — keep inside the same thread/topic if applicable
-          const replyOpts = threadId ? { message_thread_id: threadId } : undefined;
-          try {
-            await ctx.reply(result.reply, { parse_mode: "Markdown", ...replyOpts });
-          } catch (err) {
-            logger.warn(
-              `${label} Markdown reply failed, falling back to plain text: ${(err as Error).message}`,
+          if (!session) {
+            await ctx.reply(
+              BOT_MSG.NO_SESSION,
+              threadId ? { message_thread_id: threadId } : undefined,
             );
-            await ctx.reply(result.reply, replyOpts);
+            return;
           }
 
-          // 5. Process Cross-Platform Markers
-          if (result.markers && result.markers.length > 0) {
-            for (const marker of result.markers) {
-              if (marker.type === "send_message") {
-                const target = await this.sessionService.findTargetSession(
-                  clientRecord!.account_id,
-                  marker.platform,
-                  marker.targetSessionName,
-                );
-                if (target) {
-                  if (marker.platform === "telegram") {
-                    await this.sendMessage(target.clientId, target.session.chat_id, marker.text);
-                  } else if (marker.platform === "discord") {
-                    const { discordManager } = await import("./discord-manager");
-                    await discordManager.sendMessageByName(
-                      target.clientId,
-                      marker.targetSessionName,
-                      marker.text,
+          // 2. Resolve AI model
+          const clientRecord = await this.clientRepository.findById(clientId);
+          const modelId = session.ai_model_id ?? clientRecord?.ai_model_id;
+          if (!modelId) {
+            await ctx.reply(
+              BOT_MSG.NO_AI_MODEL,
+              threadId ? { message_thread_id: threadId } : undefined,
+            );
+            return;
+          }
+
+          const aiModel = await this.aiModelRepository.findById(modelId);
+          if (!aiModel) {
+            await ctx.reply(
+              BOT_MSG.AI_MODEL_NOT_FOUND,
+              threadId ? { message_thread_id: threadId } : undefined,
+            );
+            return;
+          }
+
+          try {
+            // 3. Process with ChatService
+            const result = await this.chatService.processMessage({
+              clientId,
+              chatId,
+              chatType,
+              text: userText,
+              fromId: Number(fromId),
+              fromName,
+              platform: "telegram",
+              channelName,
+              threadId,
+              aiModel,
+              entityMode: clientRecord?.entity_mode,
+            });
+
+            // 4. Send reply — keep inside the same thread/topic if applicable
+            const replyOpts = threadId ? { message_thread_id: threadId } : undefined;
+            try {
+              await ctx.reply(result.reply, { parse_mode: "Markdown", ...replyOpts });
+            } catch (err) {
+              logger.warn(
+                `${label} Markdown reply failed, falling back to plain text: ${(err as Error).message}`,
+              );
+              await ctx.reply(result.reply, replyOpts);
+            }
+
+            // 5. Process Cross-Platform Markers
+            if (result.markers && result.markers.length > 0) {
+              for (const marker of result.markers) {
+                if (marker.type === "send_message") {
+                  const target = await this.sessionService.findTargetSession(
+                    clientRecord!.account_id,
+                    marker.platform,
+                    marker.targetSessionName,
+                  );
+                  if (target) {
+                    if (marker.platform === "telegram") {
+                      await this.sendMessage(target.clientId, target.session.chat_id, marker.text);
+                    } else if (marker.platform === "discord") {
+                      const { discordManager } = await import("./discord-manager");
+                      await discordManager.sendMessageByName(
+                        target.clientId,
+                        marker.targetSessionName,
+                        marker.text,
+                      );
+                    }
+                  } else {
+                    await ctx.reply(
+                      BOT_MSG.SESSION_NOT_FOUND(marker.targetSessionName, marker.platform),
                     );
                   }
-                } else {
-                  await ctx.reply(
-                    BOT_MSG.SESSION_NOT_FOUND(marker.targetSessionName, marker.platform),
-                  );
                 }
               }
             }
+          } catch (err) {
+            logger.error(`${label} AI error: ${(err as Error).message}`);
+            await ctx.reply(BOT_MSG.AI_ERROR);
           }
-        } catch (err) {
-          logger.error(`${label} AI error: ${(err as Error).message}`);
-          await ctx.reply(BOT_MSG.AI_ERROR);
-        }
-      }, threadId);
+        },
+        threadId,
+      );
     });
   }
 

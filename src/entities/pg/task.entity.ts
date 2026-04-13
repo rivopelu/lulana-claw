@@ -5,7 +5,13 @@ import { AccountEntity } from "./account.entity";
 import { ClientEntity } from "./client.entity";
 
 export const taskStatusEnum = pgEnum("task_status", ["pending", "done", "cancelled"]);
-export const taskTypeEnum = pgEnum("task_type", ["task", "reminder", "notes", "meeting", "deadline"]);
+export const taskTypeEnum = pgEnum("task_type", [
+  "task",
+  "reminder",
+  "notes",
+  "meeting",
+  "deadline",
+]);
 
 export const TaskEntity = pgTable("task", {
   ...entityId,

@@ -53,10 +53,13 @@ export default class AppConnectionRepository {
   }
 
   async softDelete(id: string, deletedBy: string): Promise<void> {
-    await db.update(AppConnectionEntity).set({
-      active: false,
-      deleted_date: Date.now(),
-      deleted_by: deletedBy,
-    }).where(eq(AppConnectionEntity.id, id));
+    await db
+      .update(AppConnectionEntity)
+      .set({
+        active: false,
+        deleted_date: Date.now(),
+        deleted_by: deletedBy,
+      })
+      .where(eq(AppConnectionEntity.id, id));
   }
 }

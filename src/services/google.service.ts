@@ -47,7 +47,9 @@ export default class GoogleService {
 
   buildAuthUrl(): string {
     if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_REDIRECT_URI) {
-      throw new Error("Google OAuth not configured (GOOGLE_CLIENT_ID or GOOGLE_REDIRECT_URI missing)");
+      throw new Error(
+        "Google OAuth not configured (GOOGLE_CLIENT_ID or GOOGLE_REDIRECT_URI missing)",
+      );
     }
     const params = new URLSearchParams({
       client_id: env.GOOGLE_CLIENT_ID,
@@ -129,7 +131,9 @@ export default class GoogleService {
         });
         return { token: tokens.access_token, conn: { ...conn, access_token: tokens.access_token } };
       } catch (err) {
-        logger.error(`[GoogleService] Token refresh failed for ${accountId}: ${(err as Error).message}`);
+        logger.error(
+          `[GoogleService] Token refresh failed for ${accountId}: ${(err as Error).message}`,
+        );
         return null;
       }
     }
@@ -174,33 +178,27 @@ export default class GoogleService {
       start: start.includes("T") ? { dateTime: start } : { date: start },
       end: end.includes("T") ? { dateTime: end } : { date: end },
     };
-    const resp = await fetch(
-      "https://www.googleapis.com/calendar/v3/calendars/primary/events",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
+    const resp = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
       },
-    );
+      body: JSON.stringify(body),
+    });
     if (!resp.ok) throw new Error(`Calendar create failed: ${resp.statusText}`);
     return resp.json() as Promise<CalendarEvent>;
   }
 
   // ─── Gmail ────────────────────────────────────────────────────────────────
 
-  async sendEmail(
-    accessToken: string,
-    to: string,
-    subject: string,
-    body: string,
-  ): Promise<void> {
+  async sendEmail(accessToken: string, to: string, subject: string, body: string): Promise<void> {
     const raw = btoa(
-      unescape(encodeURIComponent(
-        `To: ${to}\r\nSubject: ${subject}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n${body}`
-      )),
+      unescape(
+        encodeURIComponent(
+          `To: ${to}\r\nSubject: ${subject}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n${body}`,
+        ),
+      ),
     )
       .replace(/\+/g, "-")
       .replace(/\//g, "_")
@@ -220,7 +218,10 @@ export default class GoogleService {
     }
   }
 
-  async listEmails(accessToken: string, max = 5): Promise<{ from: string; subject: string; snippet: string }[]> {
+  async listEmails(
+    accessToken: string,
+    max = 5,
+  ): Promise<{ from: string; subject: string; snippet: string }[]> {
     const listResp = await fetch(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${max}&labelIds=INBOX`,
       { headers: { Authorization: `Bearer ${accessToken}` } },
@@ -241,14 +242,16 @@ export default class GoogleService {
           payload: { headers: { name: string; value: string }[] };
         };
         const from = d.payload.headers.find((h) => h.name === "From")?.value ?? "";
-        const subject = d.payload.headers.find((h) => h.name === "Subject")?.value ?? "(no subject)";
+        const subject =
+          d.payload.headers.find((h) => h.name === "Subject")?.value ?? "(no subject)";
         return { from, subject, snippet: d.snippet };
       }),
     );
 
     return details
-      .filter((r): r is PromiseFulfilledResult<{ from: string; subject: string; snippet: string }> =>
-        r.status === "fulfilled" && r.value !== null,
+      .filter(
+        (r): r is PromiseFulfilledResult<{ from: string; subject: string; snippet: string }> =>
+          r.status === "fulfilled" && r.value !== null,
       )
       .map((r) => r.value);
   }

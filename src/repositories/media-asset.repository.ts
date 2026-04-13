@@ -1,5 +1,9 @@
 import { db } from "../database/database";
-import { MediaAssetEntity, type MediaAsset, type NewMediaAsset } from "../entities/pg/media-asset.entity";
+import {
+  MediaAssetEntity,
+  type MediaAsset,
+  type NewMediaAsset,
+} from "../entities/pg/media-asset.entity";
 import { and, eq, desc } from "drizzle-orm";
 
 export default class MediaAssetRepository {
